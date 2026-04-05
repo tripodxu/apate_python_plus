@@ -333,51 +333,20 @@ class MainWindow(QWidget):
         # 顶部标题
         header_card = QFrame()
         header_card.setObjectName("headerCard")
-        header_card.setStyleSheet("""
-            QFrame {
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #1f4fd8,
-                    stop:1 #4f46e5
-                );
-                border-radius: 18px;
-            }
-        """)
-
         header_layout = QVBoxLayout(header_card)
         header_layout.setContentsMargins(20, 18, 20, 18)
         header_layout.setSpacing(6)
 
         title = QLabel("文件伪装 / 还原工具")
-        title.setStyleSheet("""
-            QLabel {
-                color: white;
-                font-size: 28px;
-                font-weight: 700;
-                background: transparent;
-            }
-        """)
+        title.setObjectName("mainTitle")
 
         subtitle = QLabel("支持批量目标文件、面具文件库、随机面具伪装、配置持久化，以及独立生成批量恢复 EXE")
+        subtitle.setObjectName("mainSubtitle")
         subtitle.setWordWrap(True)
-        subtitle.setStyleSheet("""
-            QLabel {
-                color: rgba(255, 255, 255, 230);
-                font-size: 13px;
-                background: transparent;
-            }
-        """)
 
-        self.status_label = QLabel(f"程序目录：{get_app_dir()}")
+        self.status_label = QLabel("程序目录：{}".format(get_app_dir()))
+        self.status_label.setObjectName("statusInfo")
         self.status_label.setWordWrap(True)
-        self.status_label.setStyleSheet("""
-            QLabel {
-                color: rgba(255, 255, 255, 210);
-                font-size: 12px;
-                padding-top: 4px;
-                background: transparent;
-            }
-        """)
 
         header_layout.addWidget(title)
         header_layout.addWidget(subtitle)
