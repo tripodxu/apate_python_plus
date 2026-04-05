@@ -5,6 +5,7 @@ import random
 import struct
 import subprocess
 import shutil
+import secrets
 from pathlib import Path
 
 from PyQt5.QtCore import Qt
@@ -15,7 +16,7 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QFrame, QGridLayout
 )
 
-MAGIC = b"DGSK"
+DEFAULT_MAGIC = b"DGSK"
 CONFIG_FILE_NAME = "mask_config.json"
 
 
@@ -34,40 +35,93 @@ def get_config_path() -> Path:
     return get_app_dir() / CONFIG_FILE_NAME
 
 
+def normalize_config(data) -> dict:
+    if not isinstance(data, dict):
+        data = {}
+
+    mask_library = data.get("mask_library", [])
+    if not isinstance(mask_library, list):
+        mask_library = []
+
+    magic_hex = data.get("magic_hex", DEFAULT_MAGIC.hex())
+    if not isinstance(magic_hex, str):
+        magic_hex = DEFAULT_MAGIC.hex()
+
+    try:
+        magic_bytes = bytes.fromhex(magic_hex)
+        if not (1 <= len(magic_bytes) <= 32):
+            magic_hex = DEFAULT_MAGIC.hex()
+    except Exception:
+        magic_hex = DEFAULT_MAGIC.hex()
+
+    return {
+        "mask_library": mask_library,
+        "magic_hex": magic_hex
+    }
+
+
 def load_config() -> dict:
     config_path = get_config_path()
     if not config_path.exists():
-        return {"mask_library": []}
+        return normalize_config({})
 
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if not isinstance(data, dict):
-            return {"mask_library": []}
-        if "mask_library" not in data or not isinstance(data["mask_library"], list):
-            data["mask_library"] = []
-        return data
+        return normalize_config(data)
     except Exception:
-        return {"mask_library": []}
+        return normalize_config({})
 
 
 def save_config(config: dict):
+    config = normalize_config(config)
     config_path = get_config_path()
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 
+def get_magic_bytes(config: dict = None) -> bytes:
+    if config is None:
+        config = load_config()
+    try:
+        magic = bytes.fromhex(config.get("magic_hex", DEFAULT_MAGIC.hex()))
+        if not (1 <= len(magic) <= 32):
+            return DEFAULT_MAGIC
+        return magic
+    except Exception:
+        return DEFAULT_MAGIC
+
+
+def magic_to_display_text(magic: bytes) -> str:
+    try:
+        ascii_part = magic.decode("utf-8")
+    except Exception:
+        ascii_part = "<非UTF-8字节序列>"
+    return f"HEX={magic.hex().upper()} | BYTES={magic!r} | TEXT={ascii_part}"
+
+
 # =================== 核心逻辑 ===================
-def is_disguised_file(file_path: str) -> bool:
+def get_footer_meta_size(magic: bytes, suffix_len: int) -> int:
+    # original_head[::-1] + original_suffix + suffix_len(1B) + head_len(4B) + magic
+    return suffix_len + 1 + 4 + len(magic)
+
+
+def is_disguised_file(file_path: str, magic: bytes = None) -> bool:
+    if magic is None:
+        magic = get_magic_bytes()
+
     path = Path(file_path)
     if not path.is_file():
         return False
+
     try:
-        if path.stat().st_size < 9:
+        # 至少得能容纳 suffix_len(1) + head_len(4) + magic
+        if path.stat().st_size < (1 + 4 + len(magic)):
             return False
+
         with open(path, "rb") as f:
-            f.seek(-4, 2)
-            return f.read(4) == MAGIC
+            f.seek(-len(magic), os.SEEK_END)
+            return f.read(len(magic)) == magic
     except Exception:
         return False
 
@@ -76,18 +130,27 @@ def read_mask_file(mask_path: str) -> bytes:
     path = Path(mask_path)
     if not path.is_file():
         raise FileNotFoundError(f"面具文件不存在: {mask_path}")
+
     with open(path, "rb") as f:
         data = f.read()
+
     if not data:
         raise DisguiseError("面具文件为空")
+
     return data
 
 
-def disguise_file(file_path: str, mask_path: str) -> str:
+def disguise_file(file_path: str, mask_path: str, magic: bytes = None) -> str:
+    if magic is None:
+        magic = get_magic_bytes()
+
     file_path = Path(file_path)
     mask_path = Path(mask_path)
 
-    if is_disguised_file(str(file_path)):
+    if not file_path.is_file():
+        raise FileNotFoundError(f"目标文件不存在: {file_path}")
+
+    if is_disguised_file(str(file_path), magic):
         raise DisguiseError("该文件已经是伪装态")
 
     mask_bytes = read_mask_file(str(mask_path))
@@ -95,6 +158,9 @@ def disguise_file(file_path: str, mask_path: str) -> str:
     original_suffix = file_path.suffix.encode("utf-8")
     original_suffix_len = len(original_suffix)
     mask_suffix = mask_path.suffix
+
+    if original_suffix_len > 255:
+        raise DisguiseError("原始后缀长度超过 255，无法写入单字节长度")
 
     with open(file_path, "r+b") as f:
         original_head = f.read(mask_len)
@@ -105,40 +171,61 @@ def disguise_file(file_path: str, mask_path: str) -> str:
         f.write(original_suffix)
         f.write(struct.pack("B", original_suffix_len))
         f.write(struct.pack("<I", len(original_head)))
-        f.write(MAGIC)
+        f.write(magic)
 
     disguised_path = file_path.with_suffix(mask_suffix)
     os.replace(str(file_path), str(disguised_path))
     return str(disguised_path)
 
 
-def reveal_file(file_path: str) -> str:
+def reveal_file(file_path: str, magic: bytes = None) -> str:
+    if magic is None:
+        magic = get_magic_bytes()
+
     file_path = Path(file_path)
 
-    if not is_disguised_file(str(file_path)):
-        raise DisguiseError("该文件不是本程序伪装的文件")
+    if not is_disguised_file(str(file_path), magic):
+        raise DisguiseError("该文件不是当前魔术字对应的伪装文件")
 
     with open(file_path, "r+b") as f:
-        f.seek(-4, 2)
-        magic = f.read(4)
-        if magic != MAGIC:
+        file_size = file_path.stat().st_size
+
+        # 校验 magic
+        f.seek(-len(magic), os.SEEK_END)
+        tail_magic = f.read(len(magic))
+        if tail_magic != magic:
             raise DisguiseError("文件尾标记无效")
 
-        f.seek(-8, 2)
+        # 读取 head_len（位于 magic 前的 4 字节）
+        f.seek(-(len(magic) + 4), os.SEEK_END)
         head_len = struct.unpack("<I", f.read(4))[0]
 
-        f.seek(-9, 2)
+        # 读取 suffix_len（位于 head_len 前的 1 字节）
+        f.seek(-(len(magic) + 4 + 1), os.SEEK_END)
         suffix_len = struct.unpack("B", f.read(1))[0]
 
-        suffix_pos = file_path.stat().st_size - 9 - suffix_len
+        if suffix_len > file_size:
+            raise DisguiseError("文件结构异常：suffix_len 非法")
+
+        suffix_pos = file_size - len(magic) - 4 - 1 - suffix_len
+        if suffix_pos < 0:
+            raise DisguiseError("文件结构异常：suffix_pos 非法")
+
         f.seek(suffix_pos)
         original_suffix = f.read(suffix_len).decode("utf-8")
 
         head_pos = suffix_pos - head_len
+        if head_pos < 0:
+            raise DisguiseError("文件结构异常：head_pos 非法")
+
         f.seek(head_pos)
         original_head_reversed = f.read(head_len)
+        if len(original_head_reversed) != head_len:
+            raise DisguiseError("文件结构异常：原始头长度不足")
+
         original_head = original_head_reversed[::-1]
 
+        # 截断尾部附加信息
         f.truncate(head_pos)
         f.seek(0)
         f.write(original_head)
@@ -320,10 +407,11 @@ class MainWindow(QWidget):
         self.config = load_config()
         self.init_ui()
         self.load_mask_library_from_config()
+        self.refresh_magic_ui()
 
     def init_ui(self):
-        self.setWindowTitle("文件伪装 / 还原工具 v1.0")
-        self.resize(1180, 900)
+        self.setWindowTitle("文件伪装 / 还原工具 v2.0")
+        self.resize(1240, 960)
         self.apply_styles()
 
         root = QVBoxLayout(self)
@@ -348,7 +436,7 @@ class MainWindow(QWidget):
         header_layout.setContentsMargins(20, 18, 20, 18)
         header_layout.setSpacing(6)
 
-        title = QLabel("文件伪装 / 还原工具 v1.0")
+        title = QLabel("文件伪装 / 还原工具 v2.0")
         title.setStyleSheet("""
             QLabel {
                 color: white;
@@ -358,7 +446,7 @@ class MainWindow(QWidget):
             }
         """)
 
-        subtitle = QLabel("支持批量目标文件、面具文件库、随机面具伪装、配置持久化，以及独立生成批量恢复 EXE")
+        subtitle = QLabel("支持批量目标文件、面具文件库、随机面具伪装、配置持久化、自定义魔术字、生成匹配当前魔术字的恢复 EXE")
         subtitle.setWordWrap(True)
         subtitle.setStyleSheet("""
             QLabel {
@@ -382,8 +470,47 @@ class MainWindow(QWidget):
         header_layout.addWidget(title)
         header_layout.addWidget(subtitle)
         header_layout.addWidget(self.status_label)
-
         root.addWidget(header_card)
+
+        # 魔术字设置区
+        magic_card = SectionCard(
+            "魔术字设置",
+            "用于识别当前程序伪装的文件尾标记。支持手动输入 ASCII 文本、HEX、随机生成、重置默认。"
+        )
+
+        magic_top_row = QHBoxLayout()
+        magic_top_row.setSpacing(10)
+
+        self.magic_edit = QLineEdit()
+        self.magic_edit.setObjectName("infoLine")
+        self.magic_edit.setPlaceholderText("输入魔术字：支持 ASCII（如 DGSK）或 HEX（如 4447534B）")
+
+        btn_apply_magic = self.make_button("应用魔术字", accent=True)
+        btn_apply_magic.clicked.connect(self.apply_magic_from_input)
+
+        btn_random_magic = self.make_button("随机生成", secondary=True)
+        btn_random_magic.clicked.connect(self.generate_random_magic)
+
+        btn_reset_magic = self.make_button("重置默认", danger=True)
+        btn_reset_magic.clicked.connect(self.reset_magic)
+
+        magic_top_row.addWidget(self.magic_edit, 1)
+        magic_top_row.addWidget(btn_apply_magic)
+        magic_top_row.addWidget(btn_random_magic)
+        magic_top_row.addWidget(btn_reset_magic)
+
+        self.magic_info_label = QLabel("")
+        self.magic_info_label.setObjectName("sectionSubtitle")
+        self.magic_info_label.setWordWrap(True)
+
+        magic_hint = QLabel("说明：HEX 允许输入带空格，如 44 47 53 4B。ASCII 会按 UTF-8 直接转字节。长度建议 1~32 字节。")
+        magic_hint.setObjectName("sectionSubtitle")
+        magic_hint.setWordWrap(True)
+
+        magic_card.body_layout.addLayout(magic_top_row)
+        magic_card.body_layout.addWidget(self.magic_info_label)
+        magic_card.body_layout.addWidget(magic_hint)
+        root.addWidget(magic_card)
 
         # 双列区域
         content_layout = QHBoxLayout()
@@ -504,7 +631,7 @@ class MainWindow(QWidget):
         # 操作区
         action_card = SectionCard(
             "执行区",
-            "点击下方按钮，根据文件当前状态自动执行批量伪装或批量还原。"
+            "点击下方按钮，根据文件当前状态自动执行批量伪装或批量还原。检测与还原均基于当前魔术字。"
         )
 
         btn_toggle = self.make_button("一键 Toggle（批量伪装 / 还原）", primary=True)
@@ -515,7 +642,7 @@ class MainWindow(QWidget):
         root.addWidget(action_card)
 
         # 日志区
-        log_card = SectionCard("运行日志", "这里会输出检测、伪装、还原、生成 EXE 等详细过程。")
+        log_card = SectionCard("运行日志", "这里会输出检测、伪装、还原、生成 EXE、魔术字切换等详细过程。")
         self.log_edit = QTextEdit()
         self.log_edit.setReadOnly(True)
         self.log_edit.setObjectName("logEdit")
@@ -724,6 +851,11 @@ class MainWindow(QWidget):
         self.mask_edit.setText(f"当前面具库共 {len(self.mask_library)} 个文件")
         self.persist_mask_library()
 
+    def refresh_magic_ui(self):
+        magic = get_magic_bytes(self.config)
+        self.magic_edit.setText(magic.hex().upper())
+        self.magic_info_label.setText(f"当前魔术字：{magic_to_display_text(magic)}")
+
     def persist_mask_library(self):
         self.config["mask_library"] = self.mask_library[:]
         save_config(self.config)
@@ -743,10 +875,69 @@ class MainWindow(QWidget):
                     valid_files.append(s)
 
         self.mask_library = valid_files
-        self.config = {"mask_library": self.mask_library[:]}
+        self.config = normalize_config({
+            "mask_library": self.mask_library[:],
+            "magic_hex": config.get("magic_hex", DEFAULT_MAGIC.hex())
+        })
         save_config(self.config)
         self.refresh_mask_list()
         self.log(f"已加载面具库 {len(self.mask_library)} 个文件")
+        self.refresh_magic_ui()
+
+    # =================== 魔术字操作 ===================
+    def parse_magic_input(self, raw_text: str) -> bytes:
+        text = (raw_text or "").strip()
+        if not text:
+            raise DisguiseError("魔术字不能为空")
+
+        # 允许 0x / 空格 分隔
+        compact = text.replace(" ", "").replace("\n", "").replace("\t", "")
+        if compact.lower().startswith("0x"):
+            compact = compact[2:]
+
+        # 优先尝试 HEX
+        if compact:
+            is_hex_like = all(ch in "0123456789abcdefABCDEF" for ch in compact) and len(compact) % 2 == 0
+            if is_hex_like:
+                data = bytes.fromhex(compact)
+                if not (1 <= len(data) <= 32):
+                    raise DisguiseError("HEX 魔术字长度必须在 1~32 字节之间")
+                return data
+
+        # 否则按 UTF-8 文本处理
+        data = text.encode("utf-8")
+        if not (1 <= len(data) <= 32):
+            raise DisguiseError("文本魔术字编码后长度必须在 1~32 字节之间")
+        return data
+
+    def apply_magic_from_input(self):
+        try:
+            magic = self.parse_magic_input(self.magic_edit.text())
+            self.config["magic_hex"] = magic.hex()
+            save_config(self.config)
+            self.refresh_magic_ui()
+            self.log(f"已应用魔术字：{magic_to_display_text(magic)}")
+            QMessageBox.information(self, "成功", "魔术字已更新并保存")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"设置魔术字失败：{e}")
+
+    def generate_random_magic(self):
+        try:
+            magic = secrets.token_bytes(4)
+            self.config["magic_hex"] = magic.hex()
+            save_config(self.config)
+            self.refresh_magic_ui()
+            self.log(f"已随机生成魔术字：{magic_to_display_text(magic)}")
+            QMessageBox.information(self, "成功", "已随机生成新的魔术字")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"随机生成失败：{e}")
+
+    def reset_magic(self):
+        self.config["magic_hex"] = DEFAULT_MAGIC.hex()
+        save_config(self.config)
+        self.refresh_magic_ui()
+        self.log(f"已重置魔术字为默认：{magic_to_display_text(DEFAULT_MAGIC)}")
+        QMessageBox.information(self, "成功", "魔术字已重置为默认值")
 
     # =================== 目标文件操作 ===================
     def add_target_paths(self, paths):
@@ -869,13 +1060,16 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, "提示", "请先选择目标文件或文件夹")
             return
 
+        magic = get_magic_bytes(self.config)
         disguised_count = 0
         original_count = 0
         failed = []
 
+        self.log(f"开始检测，当前魔术字：{magic_to_display_text(magic)}")
+
         for path in self.target_files:
             try:
-                if is_disguised_file(path):
+                if is_disguised_file(path, magic):
                     disguised_count += 1
                     self.log(f"[伪装态] {path}")
                 else:
@@ -901,10 +1095,11 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, "提示", "请先选择目标文件或文件夹")
             return
 
+        magic = get_magic_bytes(self.config)
         need_mask = False
         for path in self.target_files:
             try:
-                if not is_disguised_file(path):
+                if not is_disguised_file(path, magic):
                     need_mask = True
                     break
             except Exception:
@@ -914,21 +1109,23 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, "提示", "存在原始态文件，请先添加面具文件到面具库")
             return
 
+        self.log(f"开始批量处理，当前魔术字：{magic_to_display_text(magic)}")
+
         success = 0
         failed = []
 
         for old_path in self.target_files[:]:
             try:
-                if is_disguised_file(old_path):
+                if is_disguised_file(old_path, magic):
                     self.log(f"识别为伪装态，开始还原：{old_path}")
-                    new_path = reveal_file(old_path)
+                    new_path = reveal_file(old_path, magic)
                     self.log(f"还原完成：{new_path}")
                     self.replace_target_file(old_path, new_path)
                 else:
                     mask_file = self.get_random_mask_file()
                     self.log(f"识别为原始态，开始伪装：{old_path}")
                     self.log(f"随机选中面具：{mask_file}")
-                    new_path = disguise_file(old_path, mask_file)
+                    new_path = disguise_file(old_path, mask_file, magic)
                     self.log(f"伪装完成：{new_path}")
                     self.replace_target_file(old_path, new_path)
 
@@ -956,12 +1153,13 @@ class MainWindow(QWidget):
 
     def create_folder_restore_exe(self, output_dir: Path):
         py_script_path = output_dir / "restore_all_disguised.py"
+        current_magic = get_magic_bytes(self.config)
 
-        script_content = r'''import sys
+        script_content = f'''import sys
 import struct
 from pathlib import Path
 
-MAGIC = b"DGSK"
+MAGIC = bytes.fromhex("{current_magic.hex()}")
 
 
 def get_base_dir() -> Path:
@@ -974,33 +1172,40 @@ def is_disguised_file(file_path: Path) -> bool:
     if not file_path.is_file():
         return False
     try:
-        if file_path.stat().st_size < 9:
+        if file_path.stat().st_size < (1 + 4 + len(MAGIC)):
             return False
         with open(file_path, "rb") as f:
-            f.seek(-4, 2)
-            return f.read(4) == MAGIC
+            f.seek(-len(MAGIC), 2)
+            return f.read(len(MAGIC)) == MAGIC
     except Exception:
         return False
 
 
 def reveal_file(file_path: Path) -> Path:
     with open(file_path, "r+b") as f:
-        f.seek(-4, 2)
-        magic = f.read(4)
-        if magic != MAGIC:
+        file_size = file_path.stat().st_size
+
+        f.seek(-len(MAGIC), 2)
+        if f.read(len(MAGIC)) != MAGIC:
             raise Exception("文件尾标记无效")
 
-        f.seek(-8, 2)
+        f.seek(-(len(MAGIC) + 4), 2)
         head_len = struct.unpack("<I", f.read(4))[0]
 
-        f.seek(-9, 2)
+        f.seek(-(len(MAGIC) + 4 + 1), 2)
         suffix_len = struct.unpack("B", f.read(1))[0]
 
-        suffix_pos = file_path.stat().st_size - 9 - suffix_len
+        suffix_pos = file_size - len(MAGIC) - 4 - 1 - suffix_len
+        if suffix_pos < 0:
+            raise Exception("文件结构异常：suffix_pos 非法")
+
         f.seek(suffix_pos)
         original_suffix = f.read(suffix_len).decode("utf-8")
 
         head_pos = suffix_pos - head_len
+        if head_pos < 0:
+            raise Exception("文件结构异常：head_pos 非法")
+
         f.seek(head_pos)
         original_head_reversed = f.read(head_len)
         original_head = original_head_reversed[::-1]
@@ -1016,7 +1221,8 @@ def reveal_file(file_path: Path) -> Path:
 
 def main():
     base_dir = get_base_dir()
-    print(f"递归扫描目录: {base_dir}")
+    print(f"递归扫描目录: {{base_dir}}")
+    print(f"当前魔术字 HEX: {{MAGIC.hex().upper()}}")
     print("-" * 60)
 
     restored = 0
@@ -1027,20 +1233,20 @@ def main():
             continue
 
         lower_name = path.name.lower()
-        if lower_name in {"restore_all_disguised.exe", "restore_all_disguised.py"}:
+        if lower_name in {{"restore_all_disguised.exe", "restore_all_disguised.py"}}:
             continue
 
         try:
             if is_disguised_file(path):
                 new_path = reveal_file(path)
                 restored += 1
-                print(f"[已恢复] {path} -> {new_path}")
+                print(f"[已恢复] {{path}} -> {{new_path}}")
         except Exception as e:
             failed += 1
-            print(f"[失败] {path} -> {e}")
+            print(f"[失败] {{path}} -> {{e}}")
 
     print("-" * 60)
-    print(f"完成：恢复 {restored} 个，失败 {failed} 个")
+    print(f"完成：恢复 {{restored}} 个，失败 {{failed}} 个")
     input("按回车退出...")
 
 
@@ -1052,6 +1258,7 @@ if __name__ == "__main__":
             f.write(script_content)
 
         self.log(f"生成批量恢复脚本: {py_script_path}")
+        self.log(f"当前恢复脚本绑定魔术字：{magic_to_display_text(current_magic)}")
 
         exe_path = create_restore_exe(str(py_script_path))
         self.log(f"生成批量恢复 exe: {exe_path}")
@@ -1059,7 +1266,7 @@ if __name__ == "__main__":
         QMessageBox.information(
             self,
             "生成成功",
-            f"批量恢复 EXE 已生成：\n{exe_path}\n\n输出目录固定为程序所在文件夹。"
+            f"批量恢复 EXE 已生成：\n{exe_path}\n\n当前绑定魔术字：{current_magic.hex().upper()}\n输出目录固定为程序所在文件夹。"
         )
 
 
