@@ -204,7 +204,7 @@ def reveal_file(file_path: str, magic: bytes, reserved_output_paths=None) -> str
     return str(restored_path)
 
 
-# =================== 引擎状态类 (被UI调用) ===================
+# =================== 引擎状态类 ===================
 class DisguiseEngine:
     def __init__(self):
         self.config = load_config()
@@ -269,7 +269,6 @@ class DisguiseEngine:
         if not self.mask_library: raise DisguiseError("面具库为空")
         return random.choice(self.mask_library)
 
-    # ==== 批处理执行方法 (回调机制隔离UI) ====
     def detect_status(self, progress_cb, log_cb, process_events_cb):
         magic = self.get_magic_bytes()
         disguised_count, original_count, failed = 0, 0, []
@@ -331,8 +330,63 @@ class DisguiseEngine:
 
         return success, failed
 
+# ==== 获取真实的 Python 解释器路径 ====
+    def _get_real_python(self) -> str:
+        # 1. 如果是以源码 (.py) 形式运行，sys.executable 就是绝对路径，无视 PATH 环境变量
+        if not getattr(sys, "frozen", False):
+            return sys.executable
+            
+        # 2. 如果当前程序本身已经被打包成了 EXE (此时 sys.executable 指向本程序自己)
+        # 则需要在小白的电脑上寻找是否安装了 Python
+        if shutil.which("python"):
+            return "python"
+        if shutil.which("py"): # Windows 自带的 Python 启动器，通常在全局 PATH 里
+            return "py"
+            
+        raise DisguiseError(
+            "当前工具运行在独立 EXE 模式，但在您的电脑上未检测到 Python 环境。\n"
+            "【生成恢复 EXE】功能底层依赖 Python 编译器，请先下载安装 Python！"
+        )
+
+    # ==== 环境检测与自动安装 PyInstaller ====
+    def _ensure_pyinstaller(self, log_cb, python_exe: str):
+        kwargs = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+
+        try:
+            res = subprocess.run(
+                [python_exe, "-m", "PyInstaller", "--version"], 
+                capture_output=True, text=True, **kwargs
+            )
+            if res.returncode == 0:
+                return  # 已安装，正常退出
+        except Exception:
+            pass
+
+        log_cb("⚠️ 未检测到 PyInstaller 模块。")
+        log_cb("⏳ 正在自动调用清华镜像源为您安装，请耐心等待（通常需十秒左右，期间界面可能轻微卡顿）...")
+        
+        try:
+            subprocess.run(
+                [python_exe, "-m", "pip", "install", "pyinstaller", "-i", "https://pypi.tuna.tsinghua.edu.cn/simple"],
+                check=True, capture_output=True, text=True, **kwargs
+            )
+            log_cb("✅ PyInstaller 全自动安装成功！")
+        except subprocess.CalledProcessError as e:
+            err_msg = e.stderr if e.stderr else e.stdout
+            log_cb(f"❌ 自动安装失败:\n{err_msg}")
+            raise DisguiseError("自动安装 PyInstaller 失败，请检查网络或以管理员身份手动运行安装命令。")
+
     # ==== 打包 EXE 方法 ====
     def generate_restore_exe(self, output_dir: Path, log_cb):
+        # 0. 寻找真实的 Python 解释器（无视 PATH 环境变量）
+        python_exe = self._get_real_python()
+
+        # 1. 自动检测并安装所需环境
+        self._ensure_pyinstaller(log_cb, python_exe)
+
+        # 2. 生成临时脚本
         magic = self.get_magic_bytes()
         script_name = "restore_all_disguised.py"
         py_script_path = get_app_dir() / script_name
@@ -427,12 +481,18 @@ if __name__ == "__main__": main()
             exe_name = py_script_path.stem + ".exe"
             dist_path = output_dir / exe_name
 
-            log_cb(f"执行 Pyinstaller 打包...")
-            subprocess.run([
-                "pyinstaller", "--onefile", "--distpath", str(output_dir),
-                "--workpath", str(build_dir), "--specpath", str(spec_dir), str(py_script_path)
-            ], check=True)
+            # 3. 准备打包含参数（同样隐藏黑框）
+            kwargs = {}
+            if sys.platform == "win32":
+                kwargs["creationflags"] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
 
+            log_cb(f"🚀 执行 Pyinstaller 开始打包...")
+            subprocess.run([
+                python_exe, "-m", "PyInstaller", "--onefile", "--distpath", str(output_dir),
+                "--workpath", str(build_dir), "--specpath", str(spec_dir), str(py_script_path)
+            ], check=True, **kwargs)
+
+            # 4. 清理临时缓存
             shutil.rmtree(build_dir, ignore_errors=True)
             shutil.rmtree(spec_dir, ignore_errors=True)
             shutil.rmtree(py_script_path.parent / "__pycache__", ignore_errors=True)
