@@ -102,10 +102,130 @@ def magic_to_display_text(magic: bytes) -> str:
     return f"HEX={magic.hex().upper()} | BYTES={magic!r} | TEXT={ascii_part}"
 
 
+def build_non_conflicting_path(target_path: Path, tag: str, reserved_paths=None) -> Path:
+    """
+    生成一个不会覆盖现有文件的安全输出路径。
+    例如：
+    1.mp4 -> 1_disguised_1.mp4
+    1.zip -> 1_restored_1.zip
+    """
+    target_path = Path(target_path)
+    reserved = {str(Path(p).resolve()) for p in (reserved_paths or [])}
+
+    resolved_target = str(target_path.resolve())
+    if resolved_target not in reserved and not target_path.exists():
+        return target_path
+
+    stem = target_path.stem
+    suffix = target_path.suffix
+    index = 1
+    while True:
+        candidate = target_path.with_name(f"{stem}_{tag}_{index}{suffix}")
+        resolved_candidate = str(candidate.resolve())
+        if resolved_candidate not in reserved and not candidate.exists():
+            return candidate
+        index += 1
+
+
+def parse_disguised_metadata(file_obj, file_size: int, magic: bytes):
+    """
+    解析伪装文件尾部元数据。
+
+    当前格式（v2）：
+        original_head[::-1] + original_file_name + name_len(1B) + head_len(4B) + original_size(8B) + magic
+
+    兼容旧格式（v1）：
+        original_head[::-1] + original_file_name + name_len(1B) + head_len(4B) + magic
+        original_head[::-1] + original_suffix + suffix_len(1B) + head_len(4B) + magic
+    """
+    file_obj.seek(-len(magic), os.SEEK_END)
+    if file_obj.read(len(magic)) != magic:
+        raise DisguiseError("文件尾标记无效")
+
+    # 先尝试 v2：... + name_len(1) + head_len(4) + original_size(8) + magic
+    try:
+        if file_size >= len(magic) + 8 + 4 + 1:
+            file_obj.seek(-(len(magic) + 8), os.SEEK_END)
+            original_size = struct.unpack("<Q", file_obj.read(8))[0]
+
+            file_obj.seek(-(len(magic) + 8 + 4), os.SEEK_END)
+            head_len = struct.unpack("<I", file_obj.read(4))[0]
+
+            file_obj.seek(-(len(magic) + 8 + 4 + 1), os.SEEK_END)
+            name_len = struct.unpack("B", file_obj.read(1))[0]
+
+            name_pos = file_size - len(magic) - 8 - 4 - 1 - name_len
+            head_pos = name_pos - head_len
+            if 0 <= name_pos <= file_size and 0 <= head_pos <= file_size:
+                file_obj.seek(name_pos)
+                raw_name = file_obj.read(name_len)
+                decoded = raw_name.decode("utf-8")
+                candidate = Path(decoded).name
+                if candidate and candidate == decoded and decoded not in (".", ".."):
+                    return {
+                        "format": "v2",
+                        "head_len": head_len,
+                        "name_len": name_len,
+                        "name_pos": name_pos,
+                        "head_pos": head_pos,
+                        "original_name": candidate,
+                        "original_size": original_size,
+                    }
+    except Exception:
+        pass
+
+    # 回退到 v1：... + name_len/suffix_len(1) + head_len(4) + magic
+    file_obj.seek(-(len(magic) + 4), os.SEEK_END)
+    head_len = struct.unpack("<I", file_obj.read(4))[0]
+
+    file_obj.seek(-(len(magic) + 4 + 1), os.SEEK_END)
+    name_len = struct.unpack("B", file_obj.read(1))[0]
+
+    if name_len > file_size:
+        raise DisguiseError("文件结构异常：名称长度非法")
+
+    name_pos = file_size - len(magic) - 4 - 1 - name_len
+    if name_pos < 0:
+        raise DisguiseError("文件结构异常：name_pos 非法")
+
+    head_pos = name_pos - head_len
+    if head_pos < 0:
+        raise DisguiseError("文件结构异常：head_pos 非法")
+
+    file_obj.seek(name_pos)
+    raw_name = file_obj.read(name_len)
+    if len(raw_name) != name_len:
+        raise DisguiseError("文件结构异常：名称长度不足")
+
+    try:
+        decoded = raw_name.decode("utf-8")
+        candidate = Path(decoded).name
+        if candidate and candidate == decoded and decoded not in (".", ".."):
+            original_name = candidate
+        else:
+            raise ValueError("不是完整文件名")
+    except Exception:
+        try:
+            original_suffix = raw_name.decode("utf-8")
+        except Exception as e:
+            raise DisguiseError(f"无法解析原始文件名/后缀：{e}")
+        original_name = Path(file_obj.name).stem + original_suffix
+
+    return {
+        "format": "v1",
+        "head_len": head_len,
+        "name_len": name_len,
+        "name_pos": name_pos,
+        "head_pos": head_pos,
+        "original_name": original_name,
+        "original_size": head_pos,
+    }
+
+
 # =================== 核心逻辑 ===================
-def get_footer_meta_size(magic: bytes, suffix_len: int) -> int:
-    # original_head[::-1] + original_suffix + suffix_len(1B) + head_len(4B) + magic
-    return suffix_len + 1 + 4 + len(magic)
+def get_footer_meta_size(magic: bytes, name_len: int) -> int:
+    # original_head[::-1] + original_file_name + name_len(1B) + head_len(4B) + original_size(8B) + magic
+    return name_len + 1 + 4 + 8 + len(magic)
 
 
 def is_disguised_file(file_path: str, magic: bytes = None) -> bool:
@@ -142,7 +262,7 @@ def read_mask_file(mask_path: str) -> bytes:
     return data
 
 
-def disguise_file(file_path: str, mask_path: str, magic: bytes = None) -> str:
+def disguise_file(file_path: str, mask_path: str, magic: bytes = None, reserved_output_paths=None) -> str:
     if magic is None:
         magic = get_magic_bytes()
 
@@ -157,12 +277,14 @@ def disguise_file(file_path: str, mask_path: str, magic: bytes = None) -> str:
 
     mask_bytes = read_mask_file(str(mask_path))
     mask_len = len(mask_bytes)
-    original_suffix = file_path.suffix.encode("utf-8")
-    original_suffix_len = len(original_suffix)
+    original_file_name_bytes = file_path.name.encode("utf-8")
+    original_name_len = len(original_file_name_bytes)
     mask_suffix = mask_path.suffix
 
-    if original_suffix_len > 255:
-        raise DisguiseError("原始后缀长度超过 255，无法写入单字节长度")
+    if original_name_len > 255:
+        raise DisguiseError("原始文件名长度超过 255，无法写入单字节长度")
+
+    original_size = file_path.stat().st_size
 
     with open(file_path, "r+b") as f:
         original_head = f.read(mask_len)
@@ -170,17 +292,19 @@ def disguise_file(file_path: str, mask_path: str, magic: bytes = None) -> str:
         f.write(mask_bytes)
         f.seek(0, os.SEEK_END)
         f.write(original_head[::-1])
-        f.write(original_suffix)
-        f.write(struct.pack("B", original_suffix_len))
+        f.write(original_file_name_bytes)
+        f.write(struct.pack("B", original_name_len))
         f.write(struct.pack("<I", len(original_head)))
+        f.write(struct.pack("<Q", original_size))
         f.write(magic)
 
-    disguised_path = file_path.with_suffix(mask_suffix)
+    desired_path = file_path.with_suffix(mask_suffix)
+    disguised_path = build_non_conflicting_path(desired_path, "disguised", reserved_output_paths)
     os.replace(str(file_path), str(disguised_path))
     return str(disguised_path)
 
 
-def reveal_file(file_path: str, magic: bytes = None) -> str:
+def reveal_file(file_path: str, magic: bytes = None, reserved_output_paths=None) -> str:
     if magic is None:
         magic = get_magic_bytes()
 
@@ -191,48 +315,25 @@ def reveal_file(file_path: str, magic: bytes = None) -> str:
 
     with open(file_path, "r+b") as f:
         file_size = file_path.stat().st_size
+        meta = parse_disguised_metadata(f, file_size, magic)
 
-        # 校验 magic
-        f.seek(-len(magic), os.SEEK_END)
-        tail_magic = f.read(len(magic))
-        if tail_magic != magic:
-            raise DisguiseError("文件尾标记无效")
-
-        # 读取 head_len（位于 magic 前的 4 字节）
-        f.seek(-(len(magic) + 4), os.SEEK_END)
-        head_len = struct.unpack("<I", f.read(4))[0]
-
-        # 读取 suffix_len（位于 head_len 前的 1 字节）
-        f.seek(-(len(magic) + 4 + 1), os.SEEK_END)
-        suffix_len = struct.unpack("B", f.read(1))[0]
-
-        if suffix_len > file_size:
-            raise DisguiseError("文件结构异常：suffix_len 非法")
-
-        suffix_pos = file_size - len(magic) - 4 - 1 - suffix_len
-        if suffix_pos < 0:
-            raise DisguiseError("文件结构异常：suffix_pos 非法")
-
-        f.seek(suffix_pos)
-        original_suffix = f.read(suffix_len).decode("utf-8")
-
-        head_pos = suffix_pos - head_len
-        if head_pos < 0:
-            raise DisguiseError("文件结构异常：head_pos 非法")
-
-        f.seek(head_pos)
-        original_head_reversed = f.read(head_len)
-        if len(original_head_reversed) != head_len:
+        f.seek(meta["head_pos"])
+        original_head_reversed = f.read(meta["head_len"])
+        if len(original_head_reversed) != meta["head_len"]:
             raise DisguiseError("文件结构异常：原始头长度不足")
 
         original_head = original_head_reversed[::-1]
 
-        # 截断尾部附加信息
-        f.truncate(head_pos)
+        # 先恢复开头，再按原始文件大小截断，避免面具文件比原文件大时残留脏字节
         f.seek(0)
         f.write(original_head)
+        f.truncate(meta["original_size"])
 
-    restored_path = file_path.with_suffix(original_suffix)
+    desired_path = file_path.parent / meta["original_name"]
+    restored_path = desired_path
+    if str(desired_path.resolve()) in {str(Path(p).resolve()) for p in (reserved_output_paths or [])}:
+        restored_path = build_non_conflicting_path(desired_path, "restored", reserved_output_paths)
+
     os.replace(str(file_path), str(restored_path))
     return str(restored_path)
 
@@ -427,7 +528,7 @@ class MainWindow(QWidget):
         self.refresh_magic_ui()
 
     def init_ui(self):
-        self.setWindowTitle("文件伪装 / 还原工具 v2.2")
+        self.setWindowTitle("文件伪装 / 还原工具 v2.7")
         self.resize(1320, 940)
         self.apply_styles()
 
@@ -442,7 +543,7 @@ class MainWindow(QWidget):
         header_layout.setContentsMargins(24, 22, 24, 22)
         header_layout.setSpacing(10)
 
-        title = QLabel("文件伪装 / 还原工具 v2.2")
+        title = QLabel("文件伪装 / 还原工具 v2.7")
         title.setObjectName("mainTitle")
         subtitle = QLabel("支持批量目标文件、面具文件库、随机面具伪装、配置持久化、自定义魔术字、生成匹配当前魔术字的恢复 EXE")
         subtitle.setObjectName("mainSubtitle")
@@ -1039,27 +1140,36 @@ class MainWindow(QWidget):
         if need_mask and not self.mask_library:
             QMessageBox.warning(self, "警告", "存在需要伪装的文件，但当前面具文件库为空")
             return
+
+        reserved_outputs = {str(Path(p).resolve()) for p in self.target_files if Path(p).exists()}
         self.log(f"开始执行自动切换操作，当前魔术字：{magic_to_display_text(magic)}")
+        self.log("已启用同名前缀保护：伪装时若输出文件名冲突，会自动追加 _disguised_N；恢复时优先还原原始文件名")
         success = 0
         failed = []
         total = len(self.target_files)
         self.set_progress_state(0, total, "正在批量处理文件...", f"0/{total}")
         for index, old_path in enumerate(self.target_files[:], start=1):
             try:
+                old_resolved = str(Path(old_path).resolve())
+                reserved_outputs.discard(old_resolved)
+
                 if is_disguised_file(old_path, magic):
                     self.log(f"检测到伪装态，准备还原：{old_path}")
-                    new_path = reveal_file(old_path, magic)
+                    new_path = reveal_file(old_path, magic, reserved_outputs)
                     self.log(f"还原完成：{new_path}")
                     self.replace_target_file(old_path, new_path)
                 else:
                     mask_file = self.get_random_mask_file()
                     self.log(f"检测到原始态，准备伪装：{old_path}")
                     self.log(f"本次使用面具文件：{mask_file}")
-                    new_path = disguise_file(old_path, mask_file, magic)
+                    new_path = disguise_file(old_path, mask_file, magic, reserved_outputs)
                     self.log(f"伪装完成：{new_path}")
                     self.replace_target_file(old_path, new_path)
+
+                reserved_outputs.add(str(Path(new_path).resolve()))
                 success += 1
             except Exception as e:
+                reserved_outputs.add(str(Path(old_path).resolve()))
                 failed.append(f"{old_path} -> {e}")
                 self.log(f"处理失败：{old_path} -> {e}")
             self.set_progress_state(index, total, "正在批量处理文件...", f"已处理 {index}/{total}")
@@ -1088,10 +1198,11 @@ class MainWindow(QWidget):
         script_name = "restore_all_disguised.py"
         exe_name = "restore_all_disguised.exe"
 
-        temp_script_dir = Path(tempfile.mkdtemp(prefix="restore_builder_"))
+        temp_script_dir = get_app_dir()
         py_script_path = temp_script_dir / script_name
 
         script_content = f'''import sys
+import os
 import struct
 from pathlib import Path
 
@@ -1111,46 +1222,131 @@ def is_disguised_file(file_path: Path) -> bool:
         if file_path.stat().st_size < (1 + 4 + len(MAGIC)):
             return False
         with open(file_path, "rb") as f:
-            f.seek(-len(MAGIC), 2)
+            f.seek(-len(MAGIC), os.SEEK_END)
             return f.read(len(MAGIC)) == MAGIC
     except Exception:
         return False
 
 
-def reveal_file(file_path: Path) -> Path:
+def build_non_conflicting_path(target_path: Path, tag: str, reserved_paths=None) -> Path:
+    target_path = Path(target_path)
+    reserved = set()
+    for p in (reserved_paths or []):
+        try:
+            reserved.add(str(Path(p).resolve()))
+        except Exception:
+            pass
+
+    resolved_target = str(target_path.resolve())
+    if resolved_target not in reserved and not target_path.exists():
+        return target_path
+
+    stem = target_path.stem
+    suffix = target_path.suffix
+    index = 1
+    while True:
+        candidate = target_path.with_name(f"{{stem}}_{{tag}}_{{index}}{{suffix}}")
+        resolved_candidate = str(candidate.resolve())
+        if resolved_candidate not in reserved and not candidate.exists():
+            return candidate
+        index += 1
+
+
+def parse_disguised_metadata(file_obj, file_size: int):
+    file_obj.seek(-len(MAGIC), os.SEEK_END)
+    if file_obj.read(len(MAGIC)) != MAGIC:
+        raise Exception("文件尾标记无效")
+
+    try:
+        if file_size >= len(MAGIC) + 8 + 4 + 1:
+            file_obj.seek(-(len(MAGIC) + 8), os.SEEK_END)
+            original_size = struct.unpack("<Q", file_obj.read(8))[0]
+
+            file_obj.seek(-(len(MAGIC) + 8 + 4), os.SEEK_END)
+            head_len = struct.unpack("<I", file_obj.read(4))[0]
+
+            file_obj.seek(-(len(MAGIC) + 8 + 4 + 1), os.SEEK_END)
+            name_len = struct.unpack("B", file_obj.read(1))[0]
+
+            name_pos = file_size - len(MAGIC) - 8 - 4 - 1 - name_len
+            head_pos = name_pos - head_len
+            if 0 <= name_pos <= file_size and 0 <= head_pos <= file_size:
+                file_obj.seek(name_pos)
+                raw_name = file_obj.read(name_len)
+                decoded = raw_name.decode("utf-8")
+                candidate = Path(decoded).name
+                if candidate and candidate == decoded and decoded not in (".", ".."):
+                    return {{
+                        "head_len": head_len,
+                        "head_pos": head_pos,
+                        "original_name": candidate,
+                        "original_size": original_size,
+                    }}
+    except Exception:
+        pass
+
+    file_obj.seek(-(len(MAGIC) + 4), os.SEEK_END)
+    head_len = struct.unpack("<I", file_obj.read(4))[0]
+
+    file_obj.seek(-(len(MAGIC) + 4 + 1), os.SEEK_END)
+    name_len = struct.unpack("B", file_obj.read(1))[0]
+
+    if name_len > file_size:
+        raise Exception("文件结构异常：名称长度非法")
+
+    name_pos = file_size - len(MAGIC) - 4 - 1 - name_len
+    if name_pos < 0:
+        raise Exception("文件结构异常：name_pos 非法")
+
+    head_pos = name_pos - head_len
+    if head_pos < 0:
+        raise Exception("文件结构异常：head_pos 非法")
+
+    file_obj.seek(name_pos)
+    raw_name = file_obj.read(name_len)
+    if len(raw_name) != name_len:
+        raise Exception("文件结构异常：名称长度不足")
+
+    try:
+        decoded = raw_name.decode("utf-8")
+        candidate = Path(decoded).name
+        if candidate and candidate == decoded and decoded not in (".", ".."):
+            original_name = candidate
+        else:
+            raise ValueError("不是完整文件名")
+    except Exception:
+        original_suffix = raw_name.decode("utf-8")
+        original_name = Path(file_obj.name).stem + original_suffix
+
+    return {{
+        "head_len": head_len,
+        "head_pos": head_pos,
+        "original_name": original_name,
+        "original_size": head_pos,
+    }}
+
+
+def reveal_file(file_path: Path, reserved_output_paths=None) -> Path:
     with open(file_path, "r+b") as f:
         file_size = file_path.stat().st_size
+        meta = parse_disguised_metadata(f, file_size)
 
-        f.seek(-len(MAGIC), 2)
-        if f.read(len(MAGIC)) != MAGIC:
-            raise Exception("文件尾标记无效")
+        f.seek(meta["head_pos"])
+        original_head_reversed = f.read(meta["head_len"])
+        if len(original_head_reversed) != meta["head_len"]:
+            raise Exception("文件结构异常：原始头长度不足")
 
-        f.seek(-(len(MAGIC) + 4), 2)
-        head_len = struct.unpack("<I", f.read(4))[0]
-
-        f.seek(-(len(MAGIC) + 4 + 1), 2)
-        suffix_len = struct.unpack("B", f.read(1))[0]
-
-        suffix_pos = file_size - len(MAGIC) - 4 - 1 - suffix_len
-        if suffix_pos < 0:
-            raise Exception("文件结构异常：suffix_pos 非法")
-
-        f.seek(suffix_pos)
-        original_suffix = f.read(suffix_len).decode("utf-8")
-
-        head_pos = suffix_pos - head_len
-        if head_pos < 0:
-            raise Exception("文件结构异常：head_pos 非法")
-
-        f.seek(head_pos)
-        original_head_reversed = f.read(head_len)
         original_head = original_head_reversed[::-1]
 
-        f.truncate(head_pos)
         f.seek(0)
         f.write(original_head)
+        f.truncate(meta["original_size"])
 
-    restored_path = file_path.with_suffix(original_suffix)
+    desired_path = file_path.parent / meta["original_name"]
+    restored_path = desired_path
+    if str(desired_path.resolve()) in {{str(Path(p).resolve()) for p in (reserved_output_paths or [])}}:
+        restored_path = build_non_conflicting_path(desired_path, "restored", reserved_output_paths)
+
     file_path.replace(restored_path)
     return restored_path
 
@@ -1163,18 +1359,22 @@ def main():
 
     restored = 0
     failed = 0
+    reserved_outputs = {{str(p.resolve()) for p in base_dir.rglob("*") if p.is_file()}}
 
     for path in base_dir.rglob("*"):
         if not path.is_file():
             continue
 
         lower_name = path.name.lower()
-        if lower_name in {{"{exe_name.lower()}", "{script_name.lower()}"}}:
+        if lower_name in {{"restore_all_disguised.exe", "restore_all_disguised.py"}}:
             continue
 
         try:
+            path_resolved = str(path.resolve())
+            reserved_outputs.discard(path_resolved)
             if is_disguised_file(path):
-                new_path = reveal_file(path)
+                new_path = reveal_file(path, reserved_outputs)
+                reserved_outputs.add(str(new_path.resolve()))
                 restored += 1
                 print(f"[已恢复] {{path}} -> {{new_path}}")
         except Exception as e:
@@ -1188,7 +1388,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-'''
+''' 
 
         try:
             with open(py_script_path, "w", encoding="utf-8") as f:
@@ -1210,7 +1410,12 @@ if __name__ == "__main__":
                 f"规则：目标文件共同最近父目录。"
             )
         finally:
-            shutil.rmtree(temp_script_dir, ignore_errors=True)
+            try:
+                if py_script_path.exists():
+                    py_script_path.unlink()
+                    self.log(f"已删除临时恢复脚本: {py_script_path}")
+            except Exception as e:
+                self.log(f"删除临时恢复脚本失败: {e}")
 
 
 # =================== 运行 ===================
