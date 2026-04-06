@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QFont
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFileDialog,
@@ -14,6 +14,66 @@ from core import (
     get_app_dir, magic_to_display_text
 )
 
+
+# =================== 异步工作线程 (QThread) ===================
+
+class DetectWorker(QThread):
+    log_sig = pyqtSignal(str)
+    prog_sig = pyqtSignal(int, int, str, str)
+    done_sig = pyqtSignal(int, int, list)
+    err_sig = pyqtSignal(str)
+
+    def __init__(self, engine):
+        super().__init__()
+        self.engine = engine
+
+    def run(self):
+        try:
+            # 传入 emit 发送信号，传入 lambda: None 替代原来的 processEvents
+            o, d, f = self.engine.detect_status(self.prog_sig.emit, self.log_sig.emit, lambda: None)
+            self.done_sig.emit(o, d, f)
+        except Exception as e:
+            self.err_sig.emit(str(e))
+
+
+class ToggleWorker(QThread):
+    log_sig = pyqtSignal(str)
+    prog_sig = pyqtSignal(int, int, str, str)
+    done_sig = pyqtSignal(int, list)
+    err_sig = pyqtSignal(str)
+
+    def __init__(self, engine):
+        super().__init__()
+        self.engine = engine
+
+    def run(self):
+        try:
+            s, f = self.engine.handle_toggle(self.prog_sig.emit, self.log_sig.emit, lambda: None)
+            self.done_sig.emit(s, f)
+        except Exception as e:
+            self.err_sig.emit(str(e))
+
+
+class ExeWorker(QThread):
+    log_sig = pyqtSignal(str)
+    prog_sig = pyqtSignal(int, int, str, str)
+    done_sig = pyqtSignal(str)
+    err_sig = pyqtSignal(str)
+
+    def __init__(self, engine, out_dir):
+        super().__init__()
+        self.engine = engine
+        self.out_dir = out_dir
+
+    def run(self):
+        try:
+            exe_path = self.engine.generate_restore_exe(self.out_dir, self.log_sig.emit, lambda: None)
+            self.done_sig.emit(str(exe_path))
+        except Exception as e:
+            self.err_sig.emit(str(e))
+
+
+# =================== UI 核心 ===================
 
 def build_shadow(blur: int = 28, offset_y: int = 8, alpha: int = 28):
     effect = QGraphicsDropShadowEffect()
@@ -113,12 +173,13 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.engine = DisguiseEngine()
+        self.current_worker = None  # 保持对当前线程的引用，防止被垃圾回收
         self.init_ui()
         self.refresh_mask_list()
         self.refresh_magic_ui()
 
     def init_ui(self):
-        self.setWindowTitle("文件伪装 / 还原工具 v2.7 (MVC重构)")
+        self.setWindowTitle("文件伪装 / 还原工具 v3.0 (QThread 异步引擎版)")
         self.resize(1320, 940)
         self.apply_styles()
 
@@ -134,7 +195,7 @@ class MainWindow(QWidget):
         header_layout.setContentsMargins(24, 22, 24, 22)
         header_layout.setSpacing(10)
 
-        title = QLabel("文件伪装 / 还原工具 v2.7 (MVC重构)")
+        title = QLabel("文件伪装 / 还原工具 v3.0 (QThread 异步引擎版)")
         title.setObjectName("mainTitle")
         
         subtitle = QLabel("支持批量目标文件、面具文件库、随机面具伪装、配置持久化、自定义魔术字、生成匹配当前魔术字的恢复 EXE")
@@ -147,9 +208,9 @@ class MainWindow(QWidget):
 
         stat_row = QHBoxLayout()
         stat_row.setSpacing(10)
-        self.target_stat = self.make_stat_chip("目标文件", "0")
-        self.mask_stat = self.make_stat_chip("面具文件", "0")
-        self.mode_stat = self.make_stat_chip("模式", "伪装 / 还原")
+        self.target_stat = self.make_stat_chip("🎯 目标文件", "0")
+        self.mask_stat = self.make_stat_chip("🎭 面具文件", "0")
+        self.mode_stat = self.make_stat_chip("⚙️ 模式", "伪装 / 还原")
         stat_row.addWidget(self.target_stat)
         stat_row.addWidget(self.mask_stat)
         stat_row.addWidget(self.mode_stat)
@@ -181,9 +242,9 @@ class MainWindow(QWidget):
         nav_tip.setObjectName("sectionSubtitle")
         nav_tip.setWordWrap(True)
 
-        self.nav_magic = self.make_nav_button("M  魔术字设置")
-        self.nav_action = self.make_nav_button("A  伪装 / 还原")
-        self.nav_log = self.make_nav_button("L  运行日志")
+        self.nav_magic = self.make_nav_button("🔑 魔术字设置")
+        self.nav_action = self.make_nav_button("⚡ 伪装 / 还原")
+        self.nav_log = self.make_nav_button("📝 运行日志")
         self.nav_magic.clicked.connect(lambda: self.switch_module(0))
         self.nav_action.clicked.connect(lambda: self.switch_module(1))
         self.nav_log.clicked.connect(lambda: self.switch_module(2))
@@ -196,7 +257,7 @@ class MainWindow(QWidget):
         side.addWidget(self.nav_log)
         side.addStretch(1)
         
-        side_hint = QLabel("建议先设置魔术字，再添加目标文件和面具文件后执行操作")
+        side_hint = QLabel("💡 建议先设置魔术字，再添加目标文件和面具文件后执行操作")
         side_hint.setObjectName("sidebarHint")
         side_hint.setWordWrap(True)
         side.addWidget(side_hint)
@@ -218,17 +279,20 @@ class MainWindow(QWidget):
         self.magic_edit.setObjectName("infoLine")
         self.magic_edit.setPlaceholderText("请输入魔术字，支持 ASCII，如 DGSK；也支持 HEX，如 44 47 53 4B")
         
-        btn_apply = self.make_button("M 应用魔术字", accent=True)
-        btn_apply.clicked.connect(self.ui_apply_magic)
-        btn_rand = self.make_button("R 随机生成", secondary=True)
-        btn_rand.clicked.connect(self.ui_rand_magic)
-        btn_reset = self.make_button("D 恢复默认", danger=True)
-        btn_reset.clicked.connect(self.ui_reset_magic)
+        self.btn_apply = self.make_button("💾 应用魔术字", accent=True)
+        self.btn_apply.setToolTip("保存并应用左侧文本框中的魔术字")
+        self.btn_apply.clicked.connect(self.ui_apply_magic)
+        
+        self.btn_rand = self.make_button("🎲 随机生成", secondary=True)
+        self.btn_rand.clicked.connect(self.ui_rand_magic)
+        
+        self.btn_reset = self.make_button("🔄 恢复默认", danger=True)
+        self.btn_reset.clicked.connect(self.ui_reset_magic)
         
         magic_row.addWidget(self.magic_edit, 1)
-        magic_row.addWidget(btn_apply)
-        magic_row.addWidget(btn_rand)
-        magic_row.addWidget(btn_reset)
+        magic_row.addWidget(self.btn_apply)
+        magic_row.addWidget(self.btn_rand)
+        magic_row.addWidget(self.btn_reset)
         
         self.magic_info_label = QLabel("")
         self.magic_info_label.setObjectName("sectionSubtitle")
@@ -257,34 +321,39 @@ class MainWindow(QWidget):
         right_col.setSpacing(14)
         
         # 目标文件框
-        self.target_drop = DropLabel("拖拽目标文件或文件夹到这里\n支持批量添加", "target")
+        self.target_drop = DropLabel("📥 拖拽目标文件或文件夹到这里\n支持批量添加", "target")
         self.target_drop.window_ref = self
+        
         self.target_list = QListWidget()
         self.target_list.setSelectionMode(QListWidget.ExtendedSelection)
+        self.target_list.setAlternatingRowColors(True)
         self.target_list.setObjectName("fileList")
         
-        target_card = SectionCard("目标文件", "可添加多个文件或整个目录，目录会自动递归收集其中所有文件")
+        target_card = SectionCard("🎯 目标文件", "可添加多个文件或整个目录，目录会自动递归收集其中所有文件")
         target_card.body_layout.addWidget(self.target_drop)
         target_card.body_layout.addWidget(self.target_list)
         
         t_grid = QGridLayout()
         t_grid.setHorizontalSpacing(10)
         t_grid.setVerticalSpacing(10)
-        btn_t_add = self.make_button("F 选择目标文件"); btn_t_add.clicked.connect(self.ui_select_targets)
-        btn_t_rm = self.make_button("R 移除选中项", secondary=True); btn_t_rm.clicked.connect(self.ui_rm_targets)
-        btn_t_clr = self.make_button("C 清空目标列表", danger=True); btn_t_clr.clicked.connect(self.ui_clr_targets)
-        btn_detect = self.make_button("S 扫描当前状态", secondary=True); btn_detect.clicked.connect(self.ui_detect)
-        btn_exe = self.make_button("E 生成恢复 EXE", accent=True); btn_exe.clicked.connect(self.ui_gen_exe)
-        t_grid.addWidget(btn_t_add, 0, 0)
-        t_grid.addWidget(btn_t_rm, 0, 1)
-        t_grid.addWidget(btn_t_clr, 1, 0)
-        t_grid.addWidget(btn_detect, 1, 1)
-        t_grid.addWidget(btn_exe, 2, 0, 1, 2)
+        self.btn_t_add = self.make_button("📂 选择文件"); self.btn_t_add.clicked.connect(self.ui_select_targets)
+        self.btn_t_rm = self.make_button("➖ 移除选中", secondary=True); self.btn_t_rm.clicked.connect(self.ui_rm_targets)
+        self.btn_t_clr = self.make_button("🗑️ 清空列表", danger=True); self.btn_t_clr.clicked.connect(self.ui_clr_targets)
+        self.btn_detect = self.make_button("🔍 扫描状态", secondary=True); self.btn_detect.clicked.connect(self.ui_detect)
+        self.btn_exe = self.make_button("📦 生成专属恢复 EXE", accent=True)
+        self.btn_exe.setToolTip("为当前绑定的魔术字生成一个独立运行的恢复程序")
+        self.btn_exe.clicked.connect(self.ui_gen_exe)
+        
+        t_grid.addWidget(self.btn_t_add, 0, 0)
+        t_grid.addWidget(self.btn_t_rm, 0, 1)
+        t_grid.addWidget(self.btn_t_clr, 1, 0)
+        t_grid.addWidget(self.btn_detect, 1, 1)
+        t_grid.addWidget(self.btn_exe, 2, 0, 1, 2)
         target_card.body_layout.addLayout(t_grid)
         left_col.addWidget(target_card)
 
         # 进度框
-        prog_card = SectionCard("处理进度", "显示当前批处理任务的执行进度和阶段说明")
+        prog_card = SectionCard("📊 处理进度", "显示当前批处理任务的执行进度和阶段说明")
         self.progress_label = QLabel("等待开始任务")
         self.progress_label.setObjectName("progressText")
         self.progress_detail = QLabel("尚未执行")
@@ -298,17 +367,19 @@ class MainWindow(QWidget):
         left_col.addWidget(prog_card)
 
         # 面具文件框
-        self.mask_drop = DropLabel("拖拽面具文件或文件夹到这里\n可作为伪装外观文件库", "mask")
+        self.mask_drop = DropLabel("🎭 拖拽面具文件或文件夹到这里\n可作为伪装外观文件库", "mask")
         self.mask_drop.window_ref = self
         self.mask_edit = FileDropLineEdit("mask")
         self.mask_edit.window_ref = self
         self.mask_edit.setObjectName("infoLine")
         self.mask_edit.setPlaceholderText("显示当前已加载的面具文件数量 / 支持拖拽添加")
+        
         self.mask_list = QListWidget()
         self.mask_list.setSelectionMode(QListWidget.ExtendedSelection)
+        self.mask_list.setAlternatingRowColors(True)
         self.mask_list.setObjectName("fileList")
         
-        mask_card = SectionCard("面具文件库", "伪装时会从面具文件库中随机选择一个文件作为外观来源")
+        mask_card = SectionCard("🎭 面具文件库", "伪装时会从面具文件库中随机选择一个文件作为外观来源")
         mask_card.body_layout.addWidget(self.mask_drop)
         mask_card.body_layout.addWidget(self.mask_edit)
         mask_card.body_layout.addWidget(self.mask_list)
@@ -316,21 +387,21 @@ class MainWindow(QWidget):
         m_grid = QGridLayout()
         m_grid.setHorizontalSpacing(10)
         m_grid.setVerticalSpacing(10)
-        btn_m_add = self.make_button("F 添加面具文件"); btn_m_add.clicked.connect(self.ui_select_masks)
-        btn_m_rm = self.make_button("R 移除选中项", secondary=True); btn_m_rm.clicked.connect(self.ui_rm_masks)
-        btn_m_clr = self.make_button("C 清空面具库", danger=True); btn_m_clr.clicked.connect(self.ui_clr_masks)
-        m_grid.addWidget(btn_m_add, 0, 0)
-        m_grid.addWidget(btn_m_rm, 0, 1)
-        m_grid.addWidget(btn_m_clr, 1, 0, 1, 2)
+        self.btn_m_add = self.make_button("📂 添加面具"); self.btn_m_add.clicked.connect(self.ui_select_masks)
+        self.btn_m_rm = self.make_button("➖ 移除选中", secondary=True); self.btn_m_rm.clicked.connect(self.ui_rm_masks)
+        self.btn_m_clr = self.make_button("🗑️ 清空面具库", danger=True); self.btn_m_clr.clicked.connect(self.ui_clr_masks)
+        m_grid.addWidget(self.btn_m_add, 0, 0)
+        m_grid.addWidget(self.btn_m_rm, 0, 1)
+        m_grid.addWidget(self.btn_m_clr, 1, 0, 1, 2)
         mask_card.body_layout.addLayout(m_grid)
         right_col.addWidget(mask_card)
 
         # 启动操作框
-        act_card = SectionCard("伪装 / 还原", "程序会自动判断文件当前状态：原始文件执行伪装，伪装文件执行还原")
-        btn_toggle = self.make_button("T 一键 Toggle：自动伪装 / 还原", primary=True)
-        btn_toggle.setMinimumHeight(50)
-        btn_toggle.clicked.connect(self.ui_toggle)
-        act_card.body_layout.addWidget(btn_toggle)
+        act_card = SectionCard("⚡ 一键执行", "程序会自动判断：原始文件 -> 执行伪装 | 伪装文件 -> 执行还原")
+        self.btn_toggle = self.make_button("🚀 开始 伪装 / 还原 切换", primary=True)
+        self.btn_toggle.setMinimumHeight(54)
+        self.btn_toggle.clicked.connect(self.ui_toggle)
+        act_card.body_layout.addWidget(self.btn_toggle)
         right_col.addWidget(act_card)
         right_col.addStretch(1)
 
@@ -343,7 +414,7 @@ class MainWindow(QWidget):
         log_page = QWidget()
         log_layout = QVBoxLayout(log_page)
         log_layout.setContentsMargins(0, 0, 0, 0)
-        log_card = SectionCard("运行日志", "显示每一步处理细节、错误信息，以及 EXE 生成过程中的输出")
+        log_card = SectionCard("📝 运行日志", "显示每一步处理细节、错误信息，以及 EXE 生成过程中的输出")
         self.log_edit = QTextEdit()
         self.log_edit.setReadOnly(True)
         self.log_edit.setObjectName("logEdit")
@@ -356,9 +427,19 @@ class MainWindow(QWidget):
         self.switch_module(1)
 
     def apply_styles(self):
-        # 100% 还原的完整样式表
+        # 加入对 disabled 状态的拦截，提供禁用时的视觉反馈
         self.setStyleSheet("""
             QWidget { background: #eef3f9; color: #1f2937; font-size: 14px; font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI"; }
+            
+            QScrollBar:vertical { border: none; background: #f1f5f9; width: 8px; border-radius: 4px; margin: 0px 0px 0px 0px; }
+            QScrollBar::handle:vertical { background: #cbd5e1; border-radius: 4px; min-height: 20px; }
+            QScrollBar::handle:vertical:hover { background: #94a3b8; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+            QScrollBar:horizontal { border: none; background: #f1f5f9; height: 8px; border-radius: 4px; margin: 0px 0px 0px 0px; }
+            QScrollBar::handle:horizontal { background: #cbd5e1; border-radius: 4px; min-width: 20px; }
+            QScrollBar::handle:horizontal:hover { background: #94a3b8; }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
+
             QFrame#headerCard { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #1b5fcf, stop:0.56 #4382eb, stop:1 #79adff); border-radius: 24px; border: 1px solid rgba(255,255,255,0.20); }
             QLabel#mainTitle { color: white; font-size: 30px; font-weight: 700; background: transparent; }
             QLabel#mainSubtitle, QLabel#statusInfo, QLabel#statLabel, QLabel#statValue, QLabel#sectionTitle, QLabel#sectionSubtitle, QLabel#sidebarTitle, QLabel#sidebarHint, QLabel#progressText { background: transparent; }
@@ -374,29 +455,38 @@ class MainWindow(QWidget):
             QLabel#sectionTitle { font-size: 18px; font-weight: 700; color: #0f172a; }
             QLabel#dropZone { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #f8fbff, stop:1 #eef4ff); border: 2px dashed #98b7ff; border-radius: 18px; padding: 26px; font-size: 15px; font-weight: 600; color: #3157c8; min-height: 92px; }
             QLabel#dropZone[dragging="true"] { background: #eaf2ff; border: 2px dashed #4b79ff; color: #2141a6; }
-            QListWidget#fileList { background: rgba(255,255,255,0.88); border: 1px solid #dbe3f0; border-radius: 16px; padding: 8px; min-height: 200px; outline: none; }
-            QListWidget#fileList::item { padding: 8px 10px; border-radius: 10px; margin: 2px 0; }
-            QListWidget#fileList::item:selected { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #dfe8ff, stop:1 #edf3ff); color: #183b9b; }
+            
+            QListWidget#fileList { background: rgba(255,255,255,0.88); alternate-background-color: #f8fafc; border: 1px solid #dbe3f0; border-radius: 16px; padding: 8px; min-height: 200px; outline: none; }
+            QListWidget#fileList::item { padding: 8px 10px; border-radius: 8px; margin: 1px 0; }
+            QListWidget#fileList::item:hover { background: #f1f5f9; }
+            QListWidget#fileList::item:selected { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #dfe8ff, stop:1 #edf3ff); color: #183b9b; font-weight: 600; }
+            
             QLineEdit#infoLine { background: rgba(255,255,255,0.94); border: 1px solid #d3dbe8; border-radius: 14px; padding: 11px 14px; color: #334155; }
             QLineEdit#infoLine:focus { border: 1px solid #75a2ff; background: #ffffff; }
-            QTextEdit#logEdit { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #0f172a, stop:1 #111c34); color: #d8f8eb; border: 1px solid #1e293b; border-radius: 18px; padding: 12px; }
+            QTextEdit#logEdit { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #0f172a, stop:1 #111c34); color: #e2e8f0; border: 1px solid #1e293b; border-radius: 18px; padding: 12px; line-height: 1.4; }
+            
             QLabel#progressText { color: #0f172a; font-size: 15px; font-weight: 700; }
-            QProgressBar#progressBar { min-height: 16px; background: #e6edf7; border: 1px solid #d4dceb; border-radius: 8px; color: #1e3a8a; text-align: center; font-weight: 700; }
-            QProgressBar#progressBar::chunk { border-radius: 7px; background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #59a9ff, stop:1 #356dff); }
-            QPushButton { border: 1px solid rgba(197,209,226,0.95); border-radius: 14px; padding: 10px 14px; font-weight: 600; min-height: 18px; background: rgba(255,255,255,0.92); }
+            QProgressBar#progressBar { min-height: 18px; background: #e2e8f0; border: none; border-radius: 9px; color: white; text-align: center; font-weight: 700; font-size: 12px;}
+            QProgressBar#progressBar::chunk { border-radius: 9px; background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #3b82f6, stop:1 #2563eb); }
+            
+            QPushButton { border: 1px solid rgba(197,209,226,0.95); border-radius: 14px; padding: 10px 14px; font-weight: 600; min-height: 18px; background: rgba(255,255,255,0.92); transition: background 0.2s; }
             QPushButton[role="default"] { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #ffffff, stop:1 #edf4ff); color: #2742b8; }
-            QPushButton[role="default"]:hover { background: #e8f0ff; }
+            QPushButton[role="default"]:hover { background: #e8f0ff; border-color: #a5b4fc; }
             QPushButton[role="secondary"] { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #ffffff, stop:1 #f1f5f9); color: #374151; }
-            QPushButton[role="secondary"]:hover { background: #e8edf4; }
-            QPushButton[role="accent"] { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #f7f1ff, stop:1 #ebe4ff); color: #5b21b6; }
-            QPushButton[role="accent"]:hover { background: #e4dcff; }
-            QPushButton[role="danger"] { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #fff6f6, stop:1 #fee7e7); color: #b91c1c; }
+            QPushButton[role="secondary"]:hover { background: #e2e8f0; }
+            QPushButton[role="accent"] { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #f7f1ff, stop:1 #ebe4ff); color: #5b21b6; border-color: #ddd6fe; }
+            QPushButton[role="accent"]:hover { background: #ede9fe; }
+            QPushButton[role="danger"] { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #fff6f6, stop:1 #fee7e7); color: #b91c1c; border-color: #fecaca; }
             QPushButton[role="danger"]:hover { background: #fee2e2; }
-            QPushButton[role="primary"] { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #2c77ff, stop:1 #5b8dff); color: white; font-size: 15px; border: 1px solid rgba(83,133,255,0.9); }
-            QPushButton[role="primary"]:hover { background: #2b68de; }
-            QPushButton[role="nav"] { text-align: left; padding: 14px 16px; border-radius: 18px; background: rgba(255,255,255,0.76); color: #1d3f97; }
-            QPushButton[role="nav"]:hover { background: rgba(231,239,255,0.98); }
-            QPushButton[role="nav"][active="true"] { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #dce9ff, stop:1 #edf4ff); border: 1px solid #a5c0ff; color: #123b93; }
+            QPushButton[role="primary"] { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #3b82f6, stop:1 #2563eb); color: white; font-size: 15px; border: 1px solid rgba(37,99,235,0.9); }
+            QPushButton[role="primary"]:hover { background: #1d4ed8; }
+            
+            /* 禁用状态的按钮样式 */
+            QPushButton:disabled { background: #e2e8f0; color: #94a3b8; border: 1px solid #cbd5e1; }
+            
+            QPushButton[role="nav"] { text-align: left; padding: 14px 16px; border-radius: 18px; background: rgba(255,255,255,0.76); color: #1e3a8a; font-weight: 600; }
+            QPushButton[role="nav"]:hover { background: rgba(219,234,254,0.7); }
+            QPushButton[role="nav"][active="true"] { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #dbeafe, stop:1 #eff6ff); border: 1px solid #bfdbfe; color: #1e40af; }
         """)
 
     def make_button(self, text, primary=False, secondary=False, danger=False, accent=False):
@@ -449,17 +539,31 @@ class MainWindow(QWidget):
             btn.style().polish(btn)
         self.mode_stat.value_label.setText(labels[index])
 
-    # ======== 回调与刷新 UI ========
+    def set_ui_busy(self, busy: bool):
+        """全局锁定/解锁控制，防重入与误触"""
+        controls = [
+            self.btn_t_add, self.btn_t_rm, self.btn_t_clr, self.btn_detect,
+            self.btn_m_add, self.btn_m_rm, self.btn_m_clr, self.btn_exe,
+            self.btn_apply, self.btn_rand, self.btn_reset, self.btn_toggle
+        ]
+        for c in controls:
+            c.setEnabled(not busy)
+            
+        if busy:
+            self.btn_toggle.setText("⏳ 任务正在后台安全执行中...")
+        else:
+            self.btn_toggle.setText("🚀 开始 伪装 / 还原 切换")
+
+    # ======== 槽函数 (跨线程回调) ========
     def cb_log(self, text: str):
         self.log_edit.append(text)
+        scrollbar = self.log_edit.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
 
     def cb_progress(self, curr, total, title, detail):
         self.progress_bar.setValue(0 if total <= 0 else int((curr / total) * 100))
         self.progress_label.setText(title)
         self.progress_detail.setText(detail)
-
-    def cb_process_events(self):
-        QApplication.processEvents()
 
     def refresh_status(self):
         self.target_stat.value_label.setText(str(len(self.engine.target_files)))
@@ -468,13 +572,13 @@ class MainWindow(QWidget):
     def refresh_target_list(self):
         self.target_list.clear()
         self.target_list.addItems(self.engine.target_files)
-        self.target_drop.setText(f"已添加目标文件 {len(self.engine.target_files)} 个\n继续拖拽可追加")
+        self.target_drop.setText(f"📥 已添加目标文件 {len(self.engine.target_files)} 个\n继续拖拽可追加")
         self.refresh_status()
 
     def refresh_mask_list(self):
         self.mask_list.clear()
         self.mask_list.addItems(self.engine.mask_library)
-        self.mask_drop.setText(f"已添加面具文件 {len(self.engine.mask_library)} 个\n继续拖拽可追加到文件库")
+        self.mask_drop.setText(f"🎭 已添加面具文件 {len(self.engine.mask_library)} 个\n继续拖拽可追加到文件库")
         self.mask_edit.setText(f"当前共有 {len(self.engine.mask_library)} 个面具文件")
         self.refresh_status()
 
@@ -573,57 +677,87 @@ class MainWindow(QWidget):
             self.refresh_mask_list()
             self.cb_log("已清空面具文件库")
 
+    # ======== 异步执行方法 ========
+    
     def ui_detect(self):
         if not self.engine.target_files:
             return QMessageBox.warning(self, "警告", "请先添加需要处理的目标文件")
+            
         self.switch_module(1)
-        o, d, f = self.engine.detect_status(self.cb_progress, self.cb_log, self.cb_process_events)
-        self.cb_progress(1, 1, "检测完成", f"原始文件 {o} 个，伪装文件 {d} 个，失败 {len(f)} 个")
+        self.set_ui_busy(True)
         
+        self.current_worker = DetectWorker(self.engine)
+        self.current_worker.log_sig.connect(self.cb_log)
+        self.current_worker.prog_sig.connect(self.cb_progress)
+        self.current_worker.done_sig.connect(self._on_detect_done)
+        self.current_worker.err_sig.connect(self._on_worker_err)
+        self.current_worker.start()
+
+    def _on_detect_done(self, o, d, f):
+        self.set_ui_busy(False)
+        self.cb_progress(1, 1, "检测完成", f"原始文件 {o} 个，伪装文件 {d} 个，失败 {len(f)} 个")
         msg = f"检测完成\n原始文件 {o} 个\n伪装文件 {d} 个"
         if f: msg += f"\n失败 {len(f)} 个"
         QMessageBox.information(self, "检测结果", msg)
-        
         if f:
             self.cb_log("以下文件检测失败：")
-            for line in f:
-                self.cb_log(line)
+            for line in f: self.cb_log(line)
 
     def ui_toggle(self):
         if not self.engine.target_files:
             return QMessageBox.warning(self, "警告", "请先添加需要处理的目标文件")
+            
         self.switch_module(1)
-        try:
-            s, f = self.engine.handle_toggle(self.cb_progress, self.cb_log, self.cb_process_events)
-            self.refresh_target_list()
-            self.cb_progress(1, 1, "批处理完成", f"成功 {s} 个，失败 {len(f)} 个")
-            QMessageBox.information(self, "提示", f"处理已结束\n成功 {s} 个\n失败 {len(f)} 个")
-            if f:
-                self.cb_log("以下文件处理失败：")
-                for line in f:
-                    self.cb_log(line)
-        except Exception as e:
-            QMessageBox.critical(self, "错误", str(e))
+        self.set_ui_busy(True)
+        
+        self.current_worker = ToggleWorker(self.engine)
+        self.current_worker.log_sig.connect(self.cb_log)
+        self.current_worker.prog_sig.connect(self.cb_progress)
+        self.current_worker.done_sig.connect(self._on_toggle_done)
+        self.current_worker.err_sig.connect(self._on_worker_err)
+        self.current_worker.start()
+
+    def _on_toggle_done(self, s, f):
+        self.set_ui_busy(False)
+        self.refresh_target_list()
+        self.cb_progress(1, 1, "批处理完成", f"成功 {s} 个，失败 {len(f)} 个")
+        QMessageBox.information(self, "提示", f"处理已结束\n成功 {s} 个\n失败 {len(f)} 个")
+        if f:
+            self.cb_log("以下文件处理失败：")
+            for line in f: self.cb_log(line)
 
     def ui_gen_exe(self):
         try:
             out_dir = self.engine.get_common_target_parent_dir()
-            self.cb_log(f"准备生成恢复 EXE，输出目录：{out_dir}")
-            self.cb_progress(0, 1, "正在生成恢复 EXE...", str(out_dir))
-            self.cb_process_events()
-            
-            exe_path = self.engine.generate_restore_exe(out_dir, self.cb_log)
-            self.cb_progress(1, 1, "恢复 EXE 已生成", str(out_dir))
-            
-            magic = self.engine.get_magic_bytes()
-            QMessageBox.information(
-                self, "生成成功",
-                f"批量恢复 EXE 已生成：\n{exe_path}\n\n"
-                f"当前绑定魔术字：{magic.hex().upper()}\n"
-                f"输出目录：{out_dir}\n"
-                f"规则：目标文件共同最近父目录。"
-            )
         except Exception as e:
-            self.cb_progress(0, 1, "生成恢复 EXE 失败", str(e))
-            self.cb_log(f"生成 EXE 失败: {e}")
-            QMessageBox.critical(self, "错误", f"生成 EXE 失败: {e}")
+            return QMessageBox.warning(self, "警告", str(e))
+            
+        self.cb_log(f"准备生成恢复 EXE，输出目录：{out_dir}")
+        self.cb_progress(0, 1, "正在生成恢复 EXE...", str(out_dir))
+        self.set_ui_busy(True)
+        
+        self.current_worker = ExeWorker(self.engine, out_dir)
+        self.current_worker.log_sig.connect(self.cb_log)
+        self.current_worker.prog_sig.connect(self.cb_progress)
+        self.current_worker.done_sig.connect(self._on_exe_done)
+        self.current_worker.err_sig.connect(self._on_worker_err)
+        self.current_worker.start()
+
+    def _on_exe_done(self, exe_path):
+        self.set_ui_busy(False)
+        out_dir = Path(exe_path).parent
+        self.cb_progress(1, 1, "恢复 EXE 已生成", str(out_dir))
+        magic = self.engine.get_magic_bytes()
+        QMessageBox.information(
+            self, "生成成功",
+            f"批量恢复 EXE 已生成：\n{exe_path}\n\n"
+            f"当前绑定魔术字：{magic.hex().upper()}\n"
+            f"输出目录：{out_dir}\n"
+            f"规则：目标文件共同最近父目录。"
+        )
+
+    def _on_worker_err(self, err_msg):
+        self.set_ui_busy(False)
+        self.cb_progress(0, 1, "任务失败", "发生异常")
+        self.cb_log(f"❌ 发生异常: {err_msg}")
+        QMessageBox.critical(self, "错误", f"操作失败: {err_msg}")
