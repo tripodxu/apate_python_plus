@@ -5,3 +5,9 @@
 
 
 pyinstaller --onefile --windowed  disguise_ui.py
+
+pyinstaller --onefile --windowed --icon=icon.ico --clean disguise_ui.py
+
+
+
+python -m nuitka --onefile --windows-icon-from-ico=icon.ico --windows-console-mode=disable --enable-plugin=pyqt5 --lto=yes disguise_ui.py
