@@ -1,6 +1,6 @@
 根据apate，进行优化成python版本（https://github.com/rippod/apate）
 
-
+生成恢复exe文件时需要 ' pip install pyinstaller '
 
 
 
