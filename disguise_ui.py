@@ -6,6 +6,7 @@ import struct
 import subprocess
 import shutil
 import secrets
+import tempfile
 from pathlib import Path
 
 from PyQt5.QtCore import Qt
@@ -262,32 +263,38 @@ def collect_files_from_paths(paths):
 
 
 # =================== PyInstaller 打包 ===================
-def create_restore_exe(py_script_path: str):
-    py_script_path = Path(py_script_path)
-    app_dir = get_app_dir()
+def create_restore_exe(py_script_path: str, exe_output_dir: Path):
+    py_script_path = Path(py_script_path).resolve()
+    exe_output_dir = Path(exe_output_dir).resolve()
+    exe_output_dir.mkdir(parents=True, exist_ok=True)
+
+    build_dir = exe_output_dir / "build_pyinstaller_restore"
+    spec_dir = exe_output_dir / "spec_pyinstaller_restore"
     exe_name = py_script_path.stem + ".exe"
-    dist_path = app_dir / exe_name
+    dist_path = exe_output_dir / exe_name
 
     subprocess.run([
         "pyinstaller",
         "--onefile",
-        "--distpath", str(app_dir),
-        "--workpath", str(app_dir / "build"),
-        "--specpath", str(app_dir),
+        "--distpath", str(exe_output_dir),
+        "--workpath", str(build_dir),
+        "--specpath", str(spec_dir),
         str(py_script_path)
     ], check=True)
 
-    build_dir = app_dir / "build"
     if build_dir.exists() and build_dir.is_dir():
         shutil.rmtree(build_dir, ignore_errors=True)
 
-    pycache_dir = app_dir / "__pycache__"
+    if spec_dir.exists() and spec_dir.is_dir():
+        shutil.rmtree(spec_dir, ignore_errors=True)
+
+    pycache_dir = py_script_path.parent / "__pycache__"
     if pycache_dir.exists() and pycache_dir.is_dir():
         shutil.rmtree(pycache_dir, ignore_errors=True)
 
-    spec_file = app_dir / f"{py_script_path.stem}.spec"
+    spec_file = spec_dir / f"{py_script_path.stem}.spec"
     if spec_file.exists():
-        spec_file.unlink()
+        spec_file.unlink(missing_ok=True)
 
     return dist_path
 
@@ -410,7 +417,7 @@ class MainWindow(QWidget):
         self.refresh_magic_ui()
 
     def init_ui(self):
-        self.setWindowTitle("文件伪装 / 还原工具 v2.0")
+        self.setWindowTitle("文件伪装 / 还原工具 v2.1")
         self.resize(1240, 960)
         self.apply_styles()
 
@@ -436,7 +443,7 @@ class MainWindow(QWidget):
         header_layout.setContentsMargins(20, 18, 20, 18)
         header_layout.setSpacing(6)
 
-        title = QLabel("文件伪装 / 还原工具 v2.0")
+        title = QLabel("文件伪装 / 还原工具 v2.1")
         title.setStyleSheet("""
             QLabel {
                 color: white;
@@ -988,6 +995,31 @@ class MainWindow(QWidget):
         if folder:
             self.add_target_paths([folder])
 
+    def get_common_target_parent_dir(self) -> Path:
+        if not self.target_files:
+            raise DisguiseError("请先选择目标文件或文件夹")
+
+        resolved_files = []
+        for p in self.target_files:
+            path = Path(p).resolve()
+            if path.is_file():
+                resolved_files.append(path)
+
+        if not resolved_files:
+            raise DisguiseError("目标列表中没有有效文件")
+
+        parent_dirs = [str(p.parent) for p in resolved_files]
+
+        try:
+            common_dir = Path(os.path.commonpath(parent_dirs))
+        except ValueError:
+            raise DisguiseError("目标文件不在同一盘符下，无法生成共同最近父目录")
+
+        if not common_dir.exists() or not common_dir.is_dir():
+            raise DisguiseError("共同最近父目录不存在或不可用")
+
+        return common_dir
+
     # =================== 面具库操作 ===================
     def add_mask_paths(self, paths):
         files = collect_files_from_paths(paths)
@@ -1144,16 +1176,21 @@ class MainWindow(QWidget):
 
     # =================== 独立生成恢复 EXE ===================
     def handle_generate_restore_exe(self):
-        app_dir = get_app_dir()
         try:
-            self.create_folder_restore_exe(app_dir)
+            output_dir = self.get_common_target_parent_dir()
+            self.log(f"根据目标文件计算 EXE 输出目录：{output_dir}")
+            self.create_folder_restore_exe(output_dir)
         except Exception as e:
             self.log(f"生成 exe 失败: {e}")
             QMessageBox.critical(self, "错误", f"生成 exe 失败: {e}")
 
     def create_folder_restore_exe(self, output_dir: Path):
-        py_script_path = output_dir / "restore_all_disguised.py"
         current_magic = get_magic_bytes(self.config)
+        script_name = "restore_all_disguised.py"
+        exe_name = "restore_all_disguised.exe"
+
+        temp_script_dir = Path(tempfile.mkdtemp(prefix="restore_builder_"))
+        py_script_path = temp_script_dir / script_name
 
         script_content = f'''import sys
 import struct
@@ -1233,7 +1270,7 @@ def main():
             continue
 
         lower_name = path.name.lower()
-        if lower_name in {{"restore_all_disguised.exe", "restore_all_disguised.py"}}:
+        if lower_name in {{"{exe_name.lower()}", "{script_name.lower()}"}}:
             continue
 
         try:
@@ -1254,20 +1291,27 @@ if __name__ == "__main__":
     main()
 '''
 
-        with open(py_script_path, "w", encoding="utf-8") as f:
-            f.write(script_content)
+        try:
+            with open(py_script_path, "w", encoding="utf-8") as f:
+                f.write(script_content)
 
-        self.log(f"生成批量恢复脚本: {py_script_path}")
-        self.log(f"当前恢复脚本绑定魔术字：{magic_to_display_text(current_magic)}")
+            self.log(f"生成临时恢复脚本: {py_script_path}")
+            self.log(f"当前恢复脚本绑定魔术字：{magic_to_display_text(current_magic)}")
+            self.log(f"最终 EXE 输出目录：{output_dir}")
 
-        exe_path = create_restore_exe(str(py_script_path))
-        self.log(f"生成批量恢复 exe: {exe_path}")
+            exe_path = create_restore_exe(str(py_script_path), output_dir)
+            self.log(f"生成批量恢复 exe: {exe_path}")
 
-        QMessageBox.information(
-            self,
-            "生成成功",
-            f"批量恢复 EXE 已生成：\n{exe_path}\n\n当前绑定魔术字：{current_magic.hex().upper()}\n输出目录固定为程序所在文件夹。"
-        )
+            QMessageBox.information(
+                self,
+                "生成成功",
+                f"批量恢复 EXE 已生成：\n{exe_path}\n\n"
+                f"当前绑定魔术字：{current_magic.hex().upper()}\n"
+                f"输出目录：{output_dir}\n"
+                f"规则：目标文件共同最近父目录。"
+            )
+        finally:
+            shutil.rmtree(temp_script_dir, ignore_errors=True)
 
 
 # =================== 运行 ===================
