@@ -10,6 +10,7 @@ from pathlib import Path
 
 DEFAULT_MAGIC = b"DGSK"
 CONFIG_FILE_NAME = "mask_config.json"
+CHUNK_SIZE = 4 * 1024 * 1024  # 4MB 分块大小
 
 class DisguiseError(Exception):
     pass
@@ -89,40 +90,88 @@ def collect_files_from_paths(paths):
                         seen.add(s), results.append(s)
     return results
 
+# =================== 反侦察: 字节异或加密 ===================
+def xor_bytes(data: bytes, key: bytes) -> bytes:
+    """使用魔术字作为密钥，对数据进行简单的异或混淆/解混淆"""
+    if not key: return data
+    return bytes([b ^ key[i % len(key)] for i, b in enumerate(data)])
+
 # =================== 文件操作核心 ===================
 def parse_disguised_metadata(file_obj, file_size: int, magic: bytes):
     file_obj.seek(-len(magic), os.SEEK_END)
     if file_obj.read(len(magic)) != magic:
         raise DisguiseError("文件尾标记无效")
 
+    # --- v4 解析逻辑：全尾部加密（结构体 13 字节被加密） ---
     try:
-        if file_size >= len(magic) + 8 + 4 + 1:
+        if file_size >= len(magic) + 13:
+            file_obj.seek(-(len(magic) + 13), os.SEEK_END)
+            encrypted_meta = file_obj.read(13)
+            dec_meta = xor_bytes(encrypted_meta, magic)
+            
+            # 手动解析 13 字节，避免对齐问题
+            name_len = dec_meta[0]
+            head_len = struct.unpack("<I", dec_meta[1:5])[0]
+            original_size = struct.unpack("<Q", dec_meta[5:13])[0]
+            
+            name_pos = file_size - len(magic) - 13 - name_len
+            head_pos = name_pos - head_len
+            
+            if 0 <= name_pos <= file_size and 0 <= head_pos <= file_size:
+                file_obj.seek(name_pos)
+                raw_name = file_obj.read(name_len)
+                try:
+                    decoded_xor = xor_bytes(raw_name, magic).decode("utf-8")
+                    if decoded_xor and decoded_xor == Path(decoded_xor).name and decoded_xor not in (".", ".."):
+                        return {"format": "v4", "head_len": head_len, "name_len": name_len,
+                                "name_pos": name_pos, "head_pos": head_pos,
+                                "original_name": decoded_xor, "original_size": original_size}
+                except Exception: pass
+    except Exception: pass
+
+    # --- v2_v3 解析逻辑：向下兼容（仅文件名加密，结构体明文） ---
+    try:
+        if file_size >= len(magic) + 13:
             file_obj.seek(-(len(magic) + 8), os.SEEK_END)
             original_size = struct.unpack("<Q", file_obj.read(8))[0]
-            file_obj.seek(-(len(magic) + 8 + 4), os.SEEK_END)
+            file_obj.seek(-(len(magic) + 12), os.SEEK_END)
             head_len = struct.unpack("<I", file_obj.read(4))[0]
-            file_obj.seek(-(len(magic) + 8 + 4 + 1), os.SEEK_END)
+            file_obj.seek(-(len(magic) + 13), os.SEEK_END)
             name_len = struct.unpack("B", file_obj.read(1))[0]
 
-            name_pos = file_size - len(magic) - 8 - 4 - 1 - name_len
+            name_pos = file_size - len(magic) - 13 - name_len
             head_pos = name_pos - head_len
             if 0 <= name_pos <= file_size and 0 <= head_pos <= file_size:
                 file_obj.seek(name_pos)
                 raw_name = file_obj.read(name_len)
-                decoded = raw_name.decode("utf-8")
-                candidate = Path(decoded).name
-                if candidate and candidate == decoded and decoded not in (".", ".."):
-                    return {"format": "v2", "head_len": head_len, "name_len": name_len,
+                
+                candidate = None
+                try:
+                    decoded_xor = xor_bytes(raw_name, magic).decode("utf-8")
+                    if decoded_xor and decoded_xor == Path(decoded_xor).name and decoded_xor not in (".", ".."):
+                        candidate = decoded_xor
+                except Exception: pass
+
+                if not candidate:
+                    try:
+                        decoded_plain = raw_name.decode("utf-8")
+                        if decoded_plain and decoded_plain == Path(decoded_plain).name and decoded_plain not in (".", ".."):
+                            candidate = decoded_plain
+                    except Exception: pass
+
+                if candidate:
+                    return {"format": "v2_v3", "head_len": head_len, "name_len": name_len,
                             "name_pos": name_pos, "head_pos": head_pos,
                             "original_name": candidate, "original_size": original_size}
     except Exception: pass
 
+    # --- v1 解析逻辑：向下兼容（结构体明文且不包含 original_size） ---
     file_obj.seek(-(len(magic) + 4), os.SEEK_END)
     head_len = struct.unpack("<I", file_obj.read(4))[0]
-    file_obj.seek(-(len(magic) + 4 + 1), os.SEEK_END)
+    file_obj.seek(-(len(magic) + 5), os.SEEK_END)
     name_len = struct.unpack("B", file_obj.read(1))[0]
     if name_len > file_size: raise DisguiseError("文件结构异常：名称长度非法")
-    name_pos = file_size - len(magic) - 4 - 1 - name_len
+    name_pos = file_size - len(magic) - 5 - name_len
     if name_pos < 0: raise DisguiseError("文件结构异常：name_pos 非法")
     head_pos = name_pos - head_len
     if head_pos < 0: raise DisguiseError("文件结构异常：head_pos 非法")
@@ -159,24 +208,48 @@ def disguise_file(file_path: str, mask_path: str, magic: bytes, reserved_output_
     if not file_path.is_file(): raise FileNotFoundError(f"目标不存在: {file_path}")
     if is_disguised_file(str(file_path), magic): raise DisguiseError("已经是伪装态")
 
-    with open(mask_path, "rb") as f: mask_bytes = f.read()
-    if not mask_bytes: raise DisguiseError("面具文件为空")
+    mask_size = mask_path.stat().st_size
+    if mask_size == 0: raise DisguiseError("面具文件为空")
 
-    mask_len = len(mask_bytes)
     original_file_name_bytes = file_path.name.encode("utf-8")
     if len(original_file_name_bytes) > 255: raise DisguiseError("文件名过长")
+    
+    # 文件名加密
+    obfuscated_name_bytes = xor_bytes(original_file_name_bytes, magic)
     original_size = file_path.stat().st_size
+    actual_head_len = min(mask_size, original_size)
 
     with open(file_path, "r+b") as f:
-        original_head = f.read(mask_len)
-        f.seek(0)
-        f.write(mask_bytes)
+        # 优化1：分块流式读取原文件头部，逆序追加到尾部
         f.seek(0, os.SEEK_END)
-        f.write(original_head[::-1])
-        f.write(original_file_name_bytes)
-        f.write(struct.pack("B", len(original_file_name_bytes)))
-        f.write(struct.pack("<I", len(original_head)))
-        f.write(struct.pack("<Q", original_size))
+        bytes_left = actual_head_len
+        while bytes_left > 0:
+            read_size = min(CHUNK_SIZE, bytes_left)
+            offset = bytes_left - read_size
+            f.seek(offset)
+            chunk = f.read(read_size)
+            f.seek(0, os.SEEK_END)
+            f.write(chunk[::-1])
+            bytes_left -= read_size
+
+        # 优化2：分块流式写入面具文件内容
+        f.seek(0)
+        with open(mask_path, "rb") as mf:
+            while True:
+                chunk = mf.read(CHUNK_SIZE)
+                if not chunk: break
+                f.write(chunk)
+
+        # 反侦察特性：打包 13 字节结构体并加密 (v4 格式)
+        meta_struct = struct.pack("B", len(obfuscated_name_bytes)) + \
+                      struct.pack("<I", actual_head_len) + \
+                      struct.pack("<Q", original_size)
+        encrypted_meta_struct = xor_bytes(meta_struct, magic)
+
+        # 写入元数据
+        f.seek(0, os.SEEK_END)
+        f.write(obfuscated_name_bytes)
+        f.write(encrypted_meta_struct) # 写入加密后的 13 字节元数据
         f.write(magic)
 
     desired_path = file_path.with_suffix(mask_path.suffix)
@@ -190,10 +263,22 @@ def reveal_file(file_path: str, magic: bytes, reserved_output_paths=None) -> str
 
     with open(file_path, "r+b") as f:
         meta = parse_disguised_metadata(f, file_path.stat().st_size, magic)
-        f.seek(meta["head_pos"])
-        original_head = f.read(meta["head_len"])[::-1]
-        f.seek(0)
-        f.write(original_head)
+        
+        # 分块流式恢复原文件头部数据
+        bytes_left = meta["head_len"]
+        read_offset = meta["head_pos"]
+        while bytes_left > 0:
+            read_size = min(CHUNK_SIZE, bytes_left)
+            f.seek(read_offset)
+            chunk = f.read(read_size)
+            
+            write_offset = bytes_left - read_size
+            f.seek(write_offset)
+            f.write(chunk[::-1])
+            
+            read_offset += read_size
+            bytes_left -= read_size
+
         f.truncate(meta["original_size"])
 
     desired_path = file_path.parent / meta["original_name"]
@@ -330,26 +415,16 @@ class DisguiseEngine:
 
         return success, failed
 
-# ==== 获取真实的 Python 解释器路径 ====
+    # ==== 获取真实的 Python 解释器路径 ====
     def _get_real_python(self) -> str:
-        # 1. 如果是以源码 (.py) 形式运行，sys.executable 就是绝对路径，无视 PATH 环境变量
         if not getattr(sys, "frozen", False):
             return sys.executable
-            
-        # 2. 如果当前程序本身已经被打包成了 EXE (此时 sys.executable 指向本程序自己)
-        # 则需要在小白的电脑上寻找是否安装了 Python
-        if shutil.which("python"):
-            return "python"
-        if shutil.which("py"): # Windows 自带的 Python 启动器，通常在全局 PATH 里
-            return "py"
-            
-        raise DisguiseError(
-            "当前工具运行在独立 EXE 模式，但在您的电脑上未检测到 Python 环境。\n"
-            "【生成恢复 EXE】功能底层依赖 Python 编译器，请先下载安装 Python！"
-        )
+        if shutil.which("python"): return "python"
+        if shutil.which("py"): return "py"
+        raise DisguiseError("未检测到系统 Python 环境，打包功能不可用。")
 
     # ==== 环境检测与自动安装 PyInstaller ====
-    def _ensure_pyinstaller(self, log_cb, python_exe: str):
+    def _ensure_pyinstaller(self, log_cb, process_events_cb, python_exe: str):
         kwargs = {}
         if sys.platform == "win32":
             kwargs["creationflags"] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
@@ -357,42 +432,48 @@ class DisguiseEngine:
         try:
             res = subprocess.run(
                 [python_exe, "-m", "PyInstaller", "--version"], 
-                capture_output=True, text=True, **kwargs
+                capture_output=True, text=True, stdin=subprocess.DEVNULL, **kwargs
             )
-            if res.returncode == 0:
-                return  # 已安装，正常退出
-        except Exception:
-            pass
+            if res.returncode == 0: return
+        except Exception: pass
 
-        log_cb("⚠️ 未检测到 PyInstaller 模块。")
-        log_cb("⏳ 正在自动调用清华镜像源为您安装，请耐心等待（通常需十秒左右，期间界面可能轻微卡顿）...")
+        log_cb("⚠️ 未检测到 PyInstaller 模块。正在自动安装，请稍候...")
+        if process_events_cb: process_events_cb()
         
         try:
-            subprocess.run(
-                [python_exe, "-m", "pip", "install", "pyinstaller", "-i", "https://pypi.tuna.tsinghua.edu.cn/simple"],
-                check=True, capture_output=True, text=True, **kwargs
+            process = subprocess.Popen(
+                [python_exe, "-m", "pip", "install", "--user", "pyinstaller", "-i", "https://pypi.tuna.tsinghua.edu.cn/simple"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, stdin=subprocess.DEVNULL, **kwargs
             )
-            log_cb("✅ PyInstaller 全自动安装成功！")
-        except subprocess.CalledProcessError as e:
-            err_msg = e.stderr if e.stderr else e.stdout
-            log_cb(f"❌ 自动安装失败:\n{err_msg}")
-            raise DisguiseError("自动安装 PyInstaller 失败，请检查网络或以管理员身份手动运行安装命令。")
+            for line in process.stdout:
+                line = line.strip()
+                if line: log_cb(f"[pip] {line}")
+                if process_events_cb: process_events_cb()
+            
+            process.wait()
+            if process.returncode != 0:
+                raise DisguiseError(f"安装 PyInstaller 失败，返回码: {process.returncode}")
+            
+            log_cb("✅ PyInstaller 自动安装成功！")
+        except Exception as e:
+            raise DisguiseError(f"启动安装进程失败: {e}")
 
-    # ==== 打包 EXE 方法 ====
-    def generate_restore_exe(self, output_dir: Path, log_cb):
-        # 0. 寻找真实的 Python 解释器（无视 PATH 环境变量）
+    # ==== 极限瘦身版 打包 EXE 方法 ====
+    def generate_restore_exe(self, output_dir: Path, log_cb, process_events_cb=None):
         python_exe = self._get_real_python()
+        self._ensure_pyinstaller(log_cb, process_events_cb, python_exe)
 
-        # 1. 自动检测并安装所需环境
-        self._ensure_pyinstaller(log_cb, python_exe)
-
-        # 2. 生成临时脚本
         magic = self.get_magic_bytes()
         script_name = "restore_all_disguised.py"
         py_script_path = get_app_dir() / script_name
 
-        script_content = f'''import sys\nimport os\nimport struct\nfrom pathlib import Path\nMAGIC = bytes.fromhex("{magic.hex()}")\n'''
+        # 同样将动态打包的 EXE 恢复脚本升级为兼容 v4 架构
+        script_content = f'''import sys\nimport os\nimport struct\nfrom pathlib import Path\nMAGIC = bytes.fromhex("{magic.hex()}")\nCHUNK_SIZE = 4 * 1024 * 1024\n'''
         script_content += '''
+def xor_bytes(data: bytes, key: bytes) -> bytes:
+    if not key: return data
+    return bytes([b ^ key[i % len(key)] for i, b in enumerate(data)])
+
 def get_base_dir() -> Path:
     return Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 
@@ -407,6 +488,24 @@ def is_disguised_file(p: Path) -> bool:
 def parse_metadata(f, sz):
     f.seek(-len(MAGIC), os.SEEK_END)
     if f.read(len(MAGIC)) != MAGIC: raise Exception("标记无效")
+    
+    # Try v4 Encrypted Metadata
+    try:
+        if sz >= len(MAGIC)+13:
+            f.seek(-(len(MAGIC)+13), os.SEEK_END)
+            dec = xor_bytes(f.read(13), MAGIC)
+            nlen, hlen, osize = dec[0], struct.unpack("<I", dec[1:5])[0], struct.unpack("<Q", dec[5:13])[0]
+            npos, hpos = sz - len(MAGIC) - 13 - nlen, sz - len(MAGIC) - 13 - nlen - hlen
+            if 0 <= npos <= sz and 0 <= hpos <= sz:
+                f.seek(npos)
+                raw = f.read(nlen)
+                try:
+                    dx = xor_bytes(raw, MAGIC).decode("utf-8")
+                    if dx and dx == Path(dx).name and dx not in (".", ".."): return {"hlen": hlen, "hpos": hpos, "name": dx, "osize": osize}
+                except Exception: pass
+    except Exception: pass
+
+    # Fallback to v2/v3
     try:
         if sz >= len(MAGIC)+13:
             f.seek(-(len(MAGIC)+8), os.SEEK_END)
@@ -418,9 +517,21 @@ def parse_metadata(f, sz):
             npos, hpos = sz - len(MAGIC) - 13 - nlen, sz - len(MAGIC) - 13 - nlen - hlen
             if 0 <= npos <= sz and 0 <= hpos <= sz:
                 f.seek(npos)
-                name = Path(f.read(nlen).decode("utf-8")).name
-                if name and name not in (".", ".."): return {"hlen": hlen, "hpos": hpos, "name": name, "osize": osize}
+                raw_name = f.read(nlen)
+                c = None
+                try:
+                    dx = xor_bytes(raw_name, MAGIC).decode("utf-8")
+                    if dx and dx == Path(dx).name and dx not in (".", ".."): c = dx
+                except Exception: pass
+                if not c:
+                    try:
+                        dp = raw_name.decode("utf-8")
+                        if dp and dp == Path(dp).name and dp not in (".", ".."): c = dp
+                    except Exception: pass
+                if c: return {"hlen": hlen, "hpos": hpos, "name": c, "osize": osize}
     except Exception: pass
+    
+    # Fallback to v1
     f.seek(-(len(MAGIC)+4), os.SEEK_END)
     hlen = struct.unpack("<I", f.read(4))[0]
     f.seek(-(len(MAGIC)+5), os.SEEK_END)
@@ -434,11 +545,18 @@ def parse_metadata(f, sz):
 def reveal_file(fp: Path, reserved):
     with open(fp, "r+b") as f:
         meta = parse_metadata(f, fp.stat().st_size)
-        f.seek(meta["hpos"])
-        head = f.read(meta["hlen"])[::-1]
-        f.seek(0)
-        f.write(head)
+        bytes_left, read_offset = meta["hlen"], meta["hpos"]
+        while bytes_left > 0:
+            read_size = min(CHUNK_SIZE, bytes_left)
+            f.seek(read_offset)
+            chunk = f.read(read_size)
+            write_offset = bytes_left - read_size
+            f.seek(write_offset)
+            f.write(chunk[::-1])
+            read_offset += read_size
+            bytes_left -= read_size
         f.truncate(meta["osize"])
+        
     dp = fp.parent / meta["name"]
     rest = dp
     if str(dp.resolve()) in reserved:
@@ -481,18 +599,51 @@ if __name__ == "__main__": main()
             exe_name = py_script_path.stem + ".exe"
             dist_path = output_dir / exe_name
 
-            # 3. 准备打包含参数（同样隐藏黑框）
             kwargs = {}
             if sys.platform == "win32":
                 kwargs["creationflags"] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
 
-            log_cb(f"🚀 执行 Pyinstaller 开始打包...")
-            subprocess.run([
-                python_exe, "-m", "PyInstaller", "--onefile", "--distpath", str(output_dir),
-                "--workpath", str(build_dir), "--specpath", str(spec_dir), str(py_script_path)
-            ], check=True, **kwargs)
+            cmd = [
+                python_exe, "-m", "PyInstaller", "--onefile",
+                "--exclude-module", "PyQt5",
+                "--exclude-module", "PyQt6",
+                "--exclude-module", "PySide2",
+                "--exclude-module", "PySide6",
+                "--exclude-module", "tkinter",
+                "--exclude-module", "numpy",
+                "--exclude-module", "pandas",
+                "--exclude-module", "matplotlib",
+                "--exclude-module", "scipy",
+                "--exclude-module", "PIL",
+                "--exclude-module", "requests",
+                "--distpath", str(output_dir),
+                "--workpath", str(build_dir),
+                "--specpath", str(spec_dir),
+                str(py_script_path)
+            ]
 
-            # 4. 清理临时缓存
+            log_cb(f"🚀 正在调用 PyInstaller 进行极限瘦身打包，请耐心等待...")
+            
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                **kwargs
+            )
+            
+            for line in process.stdout:
+                line = line.strip()
+                if line:
+                    log_cb(f"[PyInstaller] {line}")
+                if process_events_cb:
+                    process_events_cb()
+            
+            process.wait()
+            
+            if process.returncode != 0:
+                raise DisguiseError(f"打包过程失败，返回码: {process.returncode}")
+
             shutil.rmtree(build_dir, ignore_errors=True)
             shutil.rmtree(spec_dir, ignore_errors=True)
             shutil.rmtree(py_script_path.parent / "__pycache__", ignore_errors=True)
