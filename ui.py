@@ -179,7 +179,7 @@ class MainWindow(QWidget):
         self.refresh_magic_ui()
 
     def init_ui(self):
-        self.setWindowTitle("文件伪装 / 还原工具 v3.0 (QThread 异步引擎版)")
+        self.setWindowTitle("文件伪装 / 还原工具 v3.1 ")
         self.resize(1320, 940)
         self.apply_styles()
 
@@ -195,7 +195,7 @@ class MainWindow(QWidget):
         header_layout.setContentsMargins(24, 22, 24, 22)
         header_layout.setSpacing(10)
 
-        title = QLabel("文件伪装 / 还原工具 v3.0 (QThread 异步引擎版)")
+        title = QLabel("文件伪装 / 还原工具 v3.1 ")
         title.setObjectName("mainTitle")
         
         subtitle = QLabel("支持批量目标文件、面具文件库、随机面具伪装、配置持久化、自定义魔术字、生成匹配当前魔术字的恢复 EXE")
