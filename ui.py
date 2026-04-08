@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFileDialog,
     QTextEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QLineEdit,
     QListWidget, QListWidgetItem, QFrame, QGridLayout, QProgressBar,
-    QSpacerItem, QSizePolicy, QGraphicsDropShadowEffect
+    QSpacerItem, QSizePolicy, QGraphicsDropShadowEffect, QComboBox
 )
 
 from core import (
@@ -56,35 +56,62 @@ class ExeWorker(QThread):
 # =================== 现代化 UI 组件 ===================
 
 class CustomTitleBar(QFrame):
-    """自定义无边框标题栏"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent = parent
-        self.setFixedHeight(40)
+        self.setFixedHeight(48)
         self.setObjectName("titleBar")
         
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 0, 10, 0)
-        layout.setSpacing(10)
+        layout.setContentsMargins(20, 0, 20, 0)
+        layout.setSpacing(12)
         
-        title_label = QLabel("✨ APLUSE ENGINE v3.2")
+        title_label = QLabel("✨ APLUSE ENGINE v3.3")
         title_label.setObjectName("titleLabel")
         layout.addWidget(title_label)
         
         layout.addStretch()
         
-        self.btn_min = QPushButton("—")
-        self.btn_min.setObjectName("titleBtn")
-        self.btn_min.setFixedSize(30, 30)
-        self.btn_min.clicked.connect(self.parent.showMinimized)
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems([
+            "🌑 暗色极客", 
+            "☀️ 亮色极简", 
+            "🌌 渐变幽蓝", 
+            "👑 暗金奢华",
+            "🌸 猛男猛粉",
+            "☢️ 辐射废土",
+            "🔮 低调暗紫"
+        ])
+        self.theme_combo.setObjectName("themeCombo")
+        self.theme_combo.currentIndexChanged.connect(self.parent.change_theme)
+        layout.addWidget(self.theme_combo)
         
-        self.btn_close = QPushButton("✕")
-        self.btn_close.setObjectName("titleBtnClose")
-        self.btn_close.setFixedSize(30, 30)
+        layout.addSpacing(16)
+        
+        self.btn_min = QPushButton()
+        self.btn_min.setObjectName("macMin")
+        self.btn_min.clicked.connect(self.parent.showMinimized)
+        self.btn_min.setToolTip("最小化")
+        
+        self.btn_max = QPushButton()
+        self.btn_max.setObjectName("macMax")
+        self.btn_max.clicked.connect(self.toggle_maximize)
+        self.btn_max.setToolTip("最大化/还原")
+
+        self.btn_close = QPushButton()
+        self.btn_close.setObjectName("macClose")
         self.btn_close.clicked.connect(self.parent.close)
+        self.btn_close.setToolTip("关闭")
         
         layout.addWidget(self.btn_min)
+        layout.addWidget(self.btn_max)
         layout.addWidget(self.btn_close)
+
+    def toggle_maximize(self):
+        if self.parent.isMaximized():
+            self.parent.showNormal()
+        else:
+            self.parent.showMaximized()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -92,24 +119,30 @@ class CustomTitleBar(QFrame):
 
     def mouseMoveEvent(self, event):
         if event.buttons() == Qt.LeftButton:
+            if self.parent.isMaximized():
+                self.parent.showNormal()
             self.parent.move(self.parent.pos() + event.globalPos() - self.parent.dragPos)
             self.parent.dragPos = event.globalPos()
 
 
 class CustomDropList(QListWidget):
-    """
-    终极融合：将拖拽判定区与列表本体合并。
-    空列表时显示提示文字；拖拽时响应高亮。
-    """
     def __init__(self, placeholder_text, drop_type, window_ref):
         super().__init__()
         self.placeholder_text = placeholder_text
         self.drop_type = drop_type
         self.window_ref = window_ref
+        self.placeholder_color = "#52525B"
         
         self.setAcceptDrops(True)
         self.setObjectName("darkList")
         self.setSelectionMode(QListWidget.ExtendedSelection)
+        
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setWordWrap(True)
+
+    def set_placeholder_color(self, hex_color):
+        self.placeholder_color = hex_color
+        self.viewport().update()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -120,11 +153,8 @@ class CustomDropList(QListWidget):
             event.ignore()
 
     def dragMoveEvent(self, event):
-        # 必须重写此方法，否则当鼠标悬停在已有的 Item 上时会拒绝放下
-        if event.mimeData().hasUrls():
-            event.accept()
-        else:
-            event.ignore()
+        if event.mimeData().hasUrls(): event.accept()
+        else: event.ignore()
 
     def dragLeaveEvent(self, event):
         self.setProperty("drag", "none")
@@ -133,7 +163,6 @@ class CustomDropList(QListWidget):
     def dropEvent(self, event):
         self.setProperty("drag", "none")
         self.style().unpolish(self); self.style().polish(self)
-        
         paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
         if paths:
             if self.drop_type == "target": 
@@ -143,10 +172,9 @@ class CustomDropList(QListWidget):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        # 列表为空时，在正中心绘制暗色占位提示文本
         if self.count() == 0:
             painter = QPainter(self.viewport())
-            painter.setPen(QColor("#52525B")) # Zinc 600
+            painter.setPen(QColor(self.placeholder_color))
             font = self.font()
             font.setPointSize(13)
             font.setBold(True)
@@ -161,17 +189,24 @@ class MainWindow(QWidget):
         super().__init__()
         self.engine = DisguiseEngine()
         self.current_worker = None
+        self.current_theme_index = 0
         
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         
         self.init_ui()
+        
+        # 🟢 【核心修改】：从核心配置中读取持久化的主题索引
+        saved_theme = self.engine.config.get("theme_index", 0)
+        
+        self.title_bar.theme_combo.setCurrentIndex(saved_theme)
+        self.change_theme(saved_theme)
+        
         self.refresh_mask_list()
         self.refresh_magic_ui()
 
     def init_ui(self):
         self.resize(1280, 860)
-        self.apply_styles()
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 10, 10, 10)
@@ -179,11 +214,11 @@ class MainWindow(QWidget):
         self.container = QFrame()
         self.container.setObjectName("mainContainer")
         
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(0, 0, 0, 150))
-        shadow.setOffset(0, 0)
-        self.container.setGraphicsEffect(shadow)
+        self.shadow = QGraphicsDropShadowEffect()
+        self.shadow.setBlurRadius(20)
+        self.shadow.setColor(QColor(0, 0, 0, 150))
+        self.shadow.setOffset(0, 0)
+        self.container.setGraphicsEffect(self.shadow)
         
         container_layout = QVBoxLayout(self.container)
         container_layout.setContentsMargins(0, 0, 0, 0)
@@ -196,7 +231,6 @@ class MainWindow(QWidget):
         dashboard_layout.setContentsMargins(24, 16, 24, 24)
         dashboard_layout.setSpacing(20)
         
-        # --- 模块 A：全局控制与魔术字 ---
         top_row = QHBoxLayout()
         top_row.setSpacing(16)
         
@@ -239,11 +273,9 @@ class MainWindow(QWidget):
         
         dashboard_layout.addLayout(top_row)
         
-        # --- 模块 B：双列文件池 (全域合并拖拽区) ---
         file_row = QHBoxLayout()
         file_row.setSpacing(20)
         
-        # 左列：目标文件
         t_card = QFrame()
         t_card.setObjectName("card")
         t_layout = QVBoxLayout(t_card)
@@ -254,7 +286,6 @@ class MainWindow(QWidget):
         t_header.addStretch()
         t_layout.addLayout(t_header)
         
-        # 【核心修改】直接使用自绘列表替代单独的 DropZone
         self.target_list = CustomDropList("📥 拖拽目标文件/文件夹至此", "target", self)
         t_layout.addWidget(self.target_list)
         
@@ -269,18 +300,16 @@ class MainWindow(QWidget):
         t_layout.addLayout(t_btn_row)
         file_row.addWidget(t_card)
         
-        # 右列：面具文件
         m_card = QFrame()
         m_card.setObjectName("card")
         m_layout = QVBoxLayout(m_card)
         m_header = QHBoxLayout()
-        m_header.addWidget(self.make_label("🎭 伪装面具图库", "cardTitle"))
+        m_header.addWidget(self.make_label("🎭 伪装面具文件库", "cardTitle"))
         self.m_count_label = self.make_label("0 项", "badge")
         m_header.addWidget(self.m_count_label)
         m_header.addStretch()
         m_layout.addLayout(m_header)
         
-        # 【核心修改】直接使用自绘列表替代单独的 DropZone
         self.mask_list = CustomDropList("🖼️ 拖拽面具文件/文件夹至此", "mask", self)
         m_layout.addWidget(self.mask_list)
         
@@ -297,7 +326,6 @@ class MainWindow(QWidget):
         
         dashboard_layout.addLayout(file_row, 1) 
         
-        # --- 模块 C：控制台与执行 ---
         bot_row = QHBoxLayout()
         bot_row.setSpacing(20)
         
@@ -308,7 +336,7 @@ class MainWindow(QWidget):
         self.log_edit = QTextEdit()
         self.log_edit.setObjectName("terminal")
         self.log_edit.setReadOnly(True)
-        self.log_edit.append("> APATE 引擎初始化成功...")
+        self.log_edit.append("> APLUSE ENGINE 初始化成功...")
         log_layout.addWidget(self.log_edit)
         bot_row.addWidget(log_card, 2)
         
@@ -357,152 +385,197 @@ class MainWindow(QWidget):
         btn.setProperty("role", role)
         return btn
 
-    def apply_styles(self):
-        self.setStyleSheet("""
-            QWidget { 
-                font-family: "Segoe UI", "Microsoft YaHei", sans-serif; 
-                font-size: 13px; 
-            }
+    def change_theme(self, index):
+        self.current_theme_index = index
+        
+        # 🟢 【核心修改】：主题切换时，自动保存索引到 JSON 配置文件
+        if hasattr(self, 'engine'):
+            self.engine.config["theme_index"] = index
+            self.engine.save_config()
             
-            QFrame#mainContainer {
-                background-color: #09090B;
-                border: 1px solid #27272A;
-                border-radius: 12px;
+        palettes = [
+            { # 0: 🌑 暗色极客 (Zinc Theme)
+                "BG_MAIN": "#09090B", "BG_CARD": "#121217", "BORDER": "#27272A", 
+                "TEXT_MAIN": "#F4F4F5", "TEXT_SUB": "#A1A1AA", "TEXT_TITLE": "#A1A1AA",
+                "BTN_SEC": "#27272A", "BTN_SEC_HOVER": "#3F3F46", "BTN_SEC_TEXT": "#E4E4E7",
+                "PRI_START": "#2563EB", "PRI_END": "#6D28D9", "PRI_H_START": "#3B82F6", "PRI_H_END": "#8B5CF6",
+                "LIST_BG": "#09090B", "LIST_ITEM": "#18181B", "LIST_HOVER": "#27272A", "LIST_SEL": "#1D4ED8",
+                "TERM_BG": "#000000", "TERM_TEXT": "#10B981", "SHADOW": "rgba(0,0,0,150)",
+                "DIS_BG": "rgba(255, 255, 255, 0.06)", "DIS_TEXT": "rgba(255, 255, 255, 0.35)",
+                "DIS_BORDER": "rgba(255, 255, 255, 0.15)", "DIS_PRI_BG": "rgba(255, 255, 255, 0.12)",
+                "INPUT_DIS_BG": "rgba(255, 255, 255, 0.03)"
+            },
+            { # 1: ☀️ 亮色极简 (Light Theme)
+                "BG_MAIN": "#F3F4F6", "BG_CARD": "#FFFFFF", "BORDER": "#D1D5DB", 
+                "TEXT_MAIN": "#111827", "TEXT_SUB": "#6B7280", "TEXT_TITLE": "#1F2937",
+                "BTN_SEC": "#F3F4F6", "BTN_SEC_HOVER": "#E5E7EB", "BTN_SEC_TEXT": "#374151",
+                "PRI_START": "#3B82F6", "PRI_END": "#8B5CF6", "PRI_H_START": "#60A5FA", "PRI_H_END": "#A78BFA",
+                "LIST_BG": "#F9FAFB", "LIST_ITEM": "#FFFFFF", "LIST_HOVER": "#F3F4F6", "LIST_SEL": "#3B82F6",
+                "TERM_BG": "#F8FAFC", "TERM_TEXT": "#0284C7", "SHADOW": "rgba(0,0,0,30)",
+                "DIS_BG": "rgba(0, 0, 0, 0.04)", "DIS_TEXT": "rgba(0, 0, 0, 0.35)",
+                "DIS_BORDER": "rgba(0, 0, 0, 0.15)", "DIS_PRI_BG": "rgba(0, 0, 0, 0.08)",
+                "INPUT_DIS_BG": "rgba(0, 0, 0, 0.02)"
+            },
+            { # 2: 🌌 渐变幽蓝 (Cyan/Blue Theme)
+                "BG_MAIN": "#0B1120", "BG_CARD": "#1E293B", "BORDER": "#0EA5E9", 
+                "TEXT_MAIN": "#F0F9FF", "TEXT_SUB": "#94A3B8", "TEXT_TITLE": "#38BDF8",
+                "BTN_SEC": "#0F172A", "BTN_SEC_HOVER": "#1E293B", "BTN_SEC_TEXT": "#BAE6FD",
+                "PRI_START": "#0284C7", "PRI_END": "#2563EB", "PRI_H_START": "#0EA5E9", "PRI_H_END": "#3B82F6",
+                "LIST_BG": "#0B1120", "LIST_ITEM": "#0F172A", "LIST_HOVER": "#1E293B", "LIST_SEL": "#0284C7",
+                "TERM_BG": "#020617", "TERM_TEXT": "#38BDF8", "SHADOW": "rgba(2,132,199,80)",
+                "DIS_BG": "rgba(255, 255, 255, 0.06)", "DIS_TEXT": "rgba(255, 255, 255, 0.4)",
+                "DIS_BORDER": "rgba(255, 255, 255, 0.2)", "DIS_PRI_BG": "rgba(255, 255, 255, 0.15)",
+                "INPUT_DIS_BG": "rgba(255, 255, 255, 0.05)"
+            },
+            { # 3: 👑 暗金奢华 (Dark Gold Theme)
+                "BG_MAIN": "#18181B", "BG_CARD": "#27272A", "BORDER": "#B45309", 
+                "TEXT_MAIN": "#FEF08A", "TEXT_SUB": "#D4AF37", "TEXT_TITLE": "#FDE68A",
+                "BTN_SEC": "#3F3F46", "BTN_SEC_HOVER": "#52525B", "BTN_SEC_TEXT": "#FEF08A",
+                "PRI_START": "#B45309", "PRI_END": "#D97706", "PRI_H_START": "#D97706", "PRI_H_END": "#F59E0B",
+                "LIST_BG": "#18181B", "LIST_ITEM": "#27272A", "LIST_HOVER": "#3F3F46", "LIST_SEL": "#B45309",
+                "TERM_BG": "#09090B", "TERM_TEXT": "#FBBF24", "SHADOW": "rgba(180,83,9,80)",
+                "DIS_BG": "rgba(255, 255, 255, 0.04)", "DIS_TEXT": "rgba(212, 175, 55, 0.4)",
+                "DIS_BORDER": "rgba(180, 83, 9, 0.3)", "DIS_PRI_BG": "rgba(180, 83, 9, 0.15)",
+                "INPUT_DIS_BG": "rgba(255, 255, 255, 0.02)"
+            },
+            { # 4: 🌸 猛男猛粉 (Cyber Pink)
+                "BG_MAIN": "#1A0B13", "BG_CARD": "#2A1220", "BORDER": "#DB2777", 
+                "TEXT_MAIN": "#FCE7F3", "TEXT_SUB": "#F472B6", "TEXT_TITLE": "#F9A8D4",
+                "BTN_SEC": "#37172A", "BTN_SEC_HOVER": "#501E3C", "BTN_SEC_TEXT": "#FBCFE8",
+                "PRI_START": "#DB2777", "PRI_END": "#9D174D", "PRI_H_START": "#F472B6", "PRI_H_END": "#BE185D",
+                "LIST_BG": "#1A0B13", "LIST_ITEM": "#2A1220", "LIST_HOVER": "#37172A", "LIST_SEL": "#DB2777",
+                "TERM_BG": "#0D0509", "TERM_TEXT": "#F9A8D4", "SHADOW": "rgba(219,39,119,80)",
+                "DIS_BG": "rgba(255, 255, 255, 0.05)", "DIS_TEXT": "rgba(244, 114, 182, 0.5)",
+                "DIS_BORDER": "rgba(219, 39, 119, 0.3)", "DIS_PRI_BG": "rgba(219, 39, 119, 0.15)",
+                "INPUT_DIS_BG": "rgba(255, 255, 255, 0.03)"
+            },
+            { # 5: ☢️ 辐射废土 (Wasteland)
+                "BG_MAIN": "#292524", "BG_CARD": "#44403C", "BORDER": "#84CC16", 
+                "TEXT_MAIN": "#D6D3D1", "TEXT_SUB": "#A8A29E", "TEXT_TITLE": "#BEF264",
+                "BTN_SEC": "#57534E", "BTN_SEC_HOVER": "#78716C", "BTN_SEC_TEXT": "#E7E5E4",
+                "PRI_START": "#65A30D", "PRI_END": "#4D7C0F", "PRI_H_START": "#84CC16", "PRI_H_END": "#65A30D",
+                "LIST_BG": "#292524", "LIST_ITEM": "#44403C", "LIST_HOVER": "#57534E", "LIST_SEL": "#65A30D",
+                "TERM_BG": "#1C1917", "TERM_TEXT": "#84CC16", "SHADOW": "rgba(101,163,13,60)",
+                "DIS_BG": "rgba(0, 0, 0, 0.2)", "DIS_TEXT": "rgba(168, 162, 158, 0.5)",
+                "DIS_BORDER": "rgba(101, 163, 13, 0.2)", "DIS_PRI_BG": "rgba(101, 163, 13, 0.1)",
+                "INPUT_DIS_BG": "rgba(0, 0, 0, 0.3)"
+            },
+            { # 6: 🔮 低调暗紫 (Dark Violet)
+                "BG_MAIN": "#0F0B15", "BG_CARD": "#1B1429", "BORDER": "#7C3AED", 
+                "TEXT_MAIN": "#F5F3FF", "TEXT_SUB": "#A78BFA", "TEXT_TITLE": "#DDD6FE",
+                "BTN_SEC": "#2E2244", "BTN_SEC_HOVER": "#3F2E5E", "BTN_SEC_TEXT": "#EDE9FE",
+                "PRI_START": "#7C3AED", "PRI_END": "#5B21B6", "PRI_H_START": "#8B5CF6", "PRI_H_END": "#6D28D9",
+                "LIST_BG": "#0F0B15", "LIST_ITEM": "#1B1429", "LIST_HOVER": "#2E2244", "LIST_SEL": "#7C3AED",
+                "TERM_BG": "#09060D", "TERM_TEXT": "#C4B5FD", "SHADOW": "rgba(124,58,237,70)",
+                "DIS_BG": "rgba(255, 255, 255, 0.04)", "DIS_TEXT": "rgba(167, 139, 250, 0.5)",
+                "DIS_BORDER": "rgba(124, 58, 237, 0.3)", "DIS_PRI_BG": "rgba(124, 58, 237, 0.15)",
+                "INPUT_DIS_BG": "rgba(255, 255, 255, 0.02)"
             }
+        ]
+        
+        p = palettes[index]
+        
+        self.target_list.set_placeholder_color(p["TEXT_SUB"])
+        self.mask_list.set_placeholder_color(p["TEXT_SUB"])
+        
+        rgb = p["SHADOW"].replace('rgba(','').replace(')','').split(',')
+        if len(rgb) == 4:
+            self.shadow.setColor(QColor(int(rgb[0]), int(rgb[1]), int(rgb[2]), int(rgb[3])))
+
+        qss = f"""
+            QWidget {{ font-family: "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; color: {p['TEXT_MAIN']}; }}
             
-            QFrame#titleBar {
-                background-color: #09090B;
-                border-top-left-radius: 12px;
-                border-top-right-radius: 12px;
-                border-bottom: 1px solid #18181B;
-            }
-            QLabel#titleLabel { color: #A1A1AA; font-size: 12px; font-weight: bold; letter-spacing: 1px; }
-            QPushButton#titleBtn, QPushButton#titleBtnClose {
-                background: transparent; color: #A1A1AA; border: none; font-size: 14px; border-radius: 4px;
-            }
-            QPushButton#titleBtn:hover { background: #27272A; color: white; }
-            QPushButton#titleBtnClose:hover { background: #E11D48; color: white; }
+            ::selection {{ background-color: {p['PRI_H_START']}; color: white; }}
             
-            QFrame#card {
-                background-color: #121217;
-                border: 1px solid #27272A;
-                border-radius: 10px;
-            }
-            QLabel#cardTitle { color: #F4F4F5; font-size: 15px; font-weight: 700; }
-            QLabel#subText { color: #71717A; font-size: 12px; }
-            QLabel#badge { 
-                background: #27272A; color: #D4D4D8; padding: 4px 8px; 
-                border-radius: 6px; font-size: 11px; font-weight: bold; 
-            }
+            QFrame#mainContainer {{ background-color: {p['BG_MAIN']}; border: 1px solid {p['BORDER']}; border-radius: 12px; }}
+            QFrame#titleBar {{ background-color: {p['BG_MAIN']}; border-top-left-radius: 12px; border-top-right-radius: 12px; border-bottom: 1px solid {p['BORDER']}; }}
+            QLabel#titleLabel {{ color: {p['TEXT_TITLE']}; font-size: 12px; font-weight: bold; letter-spacing: 1px; }}
             
-            /* ======== 全域拖拽列表样式 ======== */
-            QListWidget#darkList {
-                background: #09090B;
-                border: 1px dashed #3F3F46; /* 使用虚线边框暗示这是拖拽区 */
-                border-radius: 8px;
-                outline: none;
-                padding: 6px;
-                color: #D4D4D8;
-                font-size: 13px;
-            }
-            /* 鼠标/文件悬浮拖拽时的激活状态 */
-            QListWidget#darkList[drag="active"] {
-                background: rgba(59, 130, 246, 0.1);
-                border: 1px dashed #3B82F6;
-            }
-            QListWidget#darkList::item {
-                padding: 8px 10px;
-                border-radius: 6px;
-                margin-bottom: 3px;
-                background: #18181B; /* 每个文件自带一个微背景 */
-                border: 1px solid transparent;
-            }
-            QListWidget#darkList::item:hover { background: #27272A; border-color: #3F3F46; }
-            QListWidget#darkList::item:selected {
-                background: #1D4ED8;
-                color: white;
-                border-color: #2563EB;
-            }
+            QPushButton#macClose, QPushButton#macMin, QPushButton#macMax {{
+                padding: 0px !important; margin: 0px !important;
+                border-radius: 7px;
+                min-width: 14px; min-height: 14px; max-width: 14px; max-height: 14px;
+            }}
+            QPushButton#macMin {{ background-color: #FFBD2E; border: 1px solid #E1A326; }}
+            QPushButton#macMin:hover {{ background-color: #FFDF6E; border: 1px solid #FFBD2E; }}
+            QPushButton#macMax {{ background-color: #27C93F; border: 1px solid #1DAE34; }}
+            QPushButton#macMax:hover {{ background-color: #58E36D; border: 1px solid #27C93F; }}
+            QPushButton#macClose {{ background-color: #FF5F56; border: 1px solid #E0443E; }}
+            QPushButton#macClose:hover {{ background-color: #FF8982; border: 1px solid #FF5F56; }}
             
-            QLineEdit#neonInput {
-                background: #09090B;
-                border: 1px solid #27272A;
-                border-radius: 6px;
-                padding: 8px 12px;
-                color: #3B82F6;
-                font-family: "Consolas", monospace;
-                font-weight: bold;
-            }
-            QLineEdit#neonInput:focus { border: 1px solid #3B82F6; background: #111827; }
+            QComboBox#themeCombo {{ background-color: {p['BTN_SEC']}; color: {p['TEXT_MAIN']}; border: 1px solid {p['BORDER']}; border-radius: 6px; padding: 4px 10px; font-weight: bold; }}
+            QComboBox#themeCombo:hover {{ background-color: {p['BTN_SEC_HOVER']}; }}
+            QComboBox#themeCombo::drop-down {{ border: none; }}
+            QComboBox#themeCombo QAbstractItemView {{ background-color: {p['BG_CARD']}; color: {p['TEXT_MAIN']}; border: 1px solid {p['BORDER']}; selection-background-color: {p['PRI_START']}; border-radius: 6px; }}
+
+            QFrame#card {{ background-color: {p['BG_CARD']}; border: 1px solid {p['BORDER']}; border-radius: 10px; }}
+            QLabel#cardTitle {{ color: {p['TEXT_MAIN']}; font-size: 15px; font-weight: 700; }}
+            QLabel#subText {{ color: {p['TEXT_SUB']}; font-size: 12px; }}
+            QLabel#badge {{ background: {p['BORDER']}; color: {p['BG_MAIN']}; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; }}
             
-            QTextEdit#terminal {
-                background: #000000;
-                color: #10B981;
-                border: none;
-                font-family: "Consolas", monospace;
-                font-size: 12px;
-                line-height: 1.5;
-            }
+            QListWidget#darkList {{
+                background: {p['LIST_BG']}; border: 1.5px dashed {p['BORDER']}; border-radius: 8px; outline: none; padding: 6px; color: {p['TEXT_MAIN']}; font-size: 13px;
+            }}
+            QListWidget#darkList[drag="active"] {{ border: 2px dashed {p['PRI_H_START']}; background: {p['LIST_ITEM']}; }}
+            QListWidget#darkList::item {{ padding: 8px 10px; border-radius: 6px; margin-bottom: 3px; background: {p['LIST_ITEM']}; border: 1px solid transparent; }}
+            QListWidget#darkList::item:hover {{ background: {p['LIST_HOVER']}; border-color: {p['BORDER']}; }}
+            QListWidget#darkList::item:selected {{ background: {p['LIST_SEL']}; color: white; border-color: {p['PRI_H_START']}; }}
             
-            QProgressBar#neonProgress {
-                background: #27272A; border: none; border-radius: 4px;
-            }
-            QProgressBar#neonProgress::chunk {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3B82F6, stop:1 #8B5CF6);
-                border-radius: 4px;
-            }
+            QLineEdit#neonInput {{
+                background: {p['LIST_BG']}; border: 1px solid {p['BORDER']}; border-radius: 6px; padding: 8px 12px; color: {p['PRI_H_START']}; font-family: "Consolas", monospace; font-weight: bold;
+            }}
+            QLineEdit#neonInput:focus {{ border: 1px solid {p['PRI_H_START']}; background: {p['LIST_ITEM']}; }}
             
-            /* ======== 按钮基础 & 交互反馈 ======== */
-            QPushButton {
-                border: none; border-radius: 6px; padding: 8px 14px; font-weight: 600;
-            }
+            QTextEdit#terminal {{ 
+                background: {p['TERM_BG']}; color: {p['TERM_TEXT']}; border: 1px solid {p['BORDER']}; 
+                font-family: "Consolas", monospace; font-size: 13px; border-radius: 8px; line-height: 1.5; padding: 8px;
+            }}
             
-            QPushButton[role="primary"] {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563EB, stop:1 #6D28D9);
+            QProgressBar#neonProgress {{ background: {p['BORDER']}; border: none; border-radius: 4px; }}
+            QProgressBar#neonProgress::chunk {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {p['PRI_START']}, stop:1 {p['PRI_END']}); border-radius: 4px; }}
+            
+            QPushButton {{ border: none; border-radius: 6px; padding: 8px 14px; font-weight: 600; transition: all 0.3s ease; }}
+            
+            QPushButton[role="primary"] {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {p['PRI_START']}, stop:1 {p['PRI_END']});
                 color: white; font-size: 14px; letter-spacing: 1px;
-            }
-            QPushButton[role="primary"]:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1D4ED8, stop:1 #5B21B6);
-            }
+                border: 1px solid rgba(255, 255, 255, 0.15);
+            }}
+            QPushButton[role="primary"]:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {p['PRI_H_START']}, stop:1 {p['PRI_H_END']});
+                border: 1px solid rgba(255, 255, 255, 0.4);
+            }}
             
-            QPushButton[role="secondary"] {
-                background: #27272A; color: #E4E4E7;
-            }
-            QPushButton[role="secondary"]:hover { background: #3F3F46; color: white; }
+            QPushButton[role="secondary"] {{ background: {p['BTN_SEC']}; color: {p['BTN_SEC_TEXT']}; border: 1px solid transparent; }}
+            QPushButton[role="secondary"]:hover {{ background: {p['BTN_SEC_HOVER']}; border: 1px solid {p['BORDER']}; }}
             
-            QPushButton[role="accent"] {
-                background: rgba(59, 130, 246, 0.15); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3);
-            }
-            QPushButton[role="accent"]:hover { background: rgba(59, 130, 246, 0.3); color: white; }
+            QPushButton[role="accent"] {{ background: transparent; color: {p['PRI_H_START']}; border: 1px solid {p['PRI_START']}; }}
+            QPushButton[role="accent"]:hover {{ background: {p['PRI_START']}; color: white; }}
             
-            QPushButton[role="danger"] {
-                background: rgba(225, 29, 72, 0.1); color: #F43F5E; border: 1px solid rgba(225, 29, 72, 0.2);
-            }
-            QPushButton[role="danger"]:hover { background: rgba(225, 29, 72, 0.25); color: white; }
+            QPushButton[role="danger"] {{ background: transparent; color: #F43F5E; border: 1px solid #E11D48; }}
+            QPushButton[role="danger"]:hover {{ background: #E11D48; color: white; }}
             
-            /* ===== 🚀 引擎运行时的“半透明白霜”锁定反馈 ===== */
-            QPushButton:disabled { 
-                background: rgba(255, 255, 255, 0.06);
-                color: rgba(255, 255, 255, 0.35);
-                border: 1px dashed rgba(255, 255, 255, 0.15);
-            }
-            QPushButton[role="primary"]:disabled {
-                background: rgba(255, 255, 255, 0.12);
-                color: rgba(255, 255, 255, 0.7);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-            }
-            QLineEdit:disabled {
-                background: rgba(255, 255, 255, 0.03);
-                color: rgba(255, 255, 255, 0.2);
-                border: 1px solid rgba(255, 255, 255, 0.05);
-            }
+            QPushButton:disabled {{ 
+                background: {p['DIS_BG']}; color: {p['DIS_TEXT']}; border: 1px dashed {p['DIS_BORDER']}; 
+            }}
+            QPushButton[role="primary"]:disabled {{ 
+                background: {p['DIS_PRI_BG']}; color: {p['DIS_TEXT']}; border: 1px solid {p['DIS_BORDER']}; 
+            }}
+            QLineEdit:disabled {{ 
+                background: {p['INPUT_DIS_BG']}; color: {p['DIS_TEXT']}; border: 1px solid {p['DIS_BORDER']}; 
+            }}
             
-            /* 滚动条 */
-            QScrollBar:vertical { border: none; background: transparent; width: 6px; margin: 0px; }
-            QScrollBar::handle:vertical { background: #3F3F46; border-radius: 3px; }
-            QScrollBar::handle:vertical:hover { background: #52525B; }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
-        """)
+            QScrollBar:horizontal {{ border: none; background: transparent; height: 0px; margin: 0px; }}
+            QScrollBar::handle:horizontal {{ background: transparent; }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0px; }}
+            
+            QScrollBar:vertical {{ border: none; background: transparent; width: 6px; margin: 0px; }}
+            QScrollBar::handle:vertical {{ background: {p['BORDER']}; border-radius: 3px; }}
+            QScrollBar::handle:vertical:hover {{ background: {p['TEXT_SUB']}; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
+        """
+        self.setStyleSheet(qss)
+
 
     # ======== UI 交互方法 ========
 
@@ -510,13 +583,13 @@ class MainWindow(QWidget):
         controls = [
             self.btn_t_add, self.btn_t_rm, self.btn_t_clr, self.btn_detect,
             self.btn_m_add, self.btn_m_rm, self.btn_m_clr, self.btn_exe,
-            self.magic_edit, self.btn_toggle
+            self.magic_edit, self.btn_toggle, self.title_bar.theme_combo
         ]
         for c in controls: c.setEnabled(not busy)
         self.target_list.setEnabled(not busy)
         self.mask_list.setEnabled(not busy)
         
-        self.btn_toggle.setText("⚡ 引擎运算中..." if busy else "⚡ 引擎启动 (伪装/还原)")
+        self.btn_toggle.setText("⚡ 引擎高转速处理中..." if busy else "⚡ 引擎启动 (伪装/还原)")
 
     def cb_log(self, text: str):
         self.log_edit.append(f"> {text}")
@@ -599,7 +672,7 @@ class MainWindow(QWidget):
                 added += 1
         self.engine.save_config()
         self.refresh_mask_list()
-        self.cb_log(f"图库扩充: +{added} 项")
+        self.cb_log(f"面具库扩充: +{added} 项")
 
     def ui_select_masks(self):
         paths, _ = QFileDialog.getOpenFileNames(self, "选择面具文件")
@@ -611,7 +684,7 @@ class MainWindow(QWidget):
         self.engine.mask_library = [p for p in self.engine.mask_library if p not in sels]
         self.engine.save_config()
         self.refresh_mask_list()
-        self.cb_log(f"图库清理: -{len(sels)} 项")
+        self.cb_log(f"面具库清理: -{len(sels)} 项")
 
     def ui_clr_masks(self):
         self.engine.mask_library.clear()

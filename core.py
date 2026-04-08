@@ -9,7 +9,10 @@ import secrets
 from pathlib import Path
 
 DEFAULT_MAGIC = b"DGSK"
-CONFIG_FILE_NAME = "mask_config.json"
+# 全局新版配置文件
+CONFIG_FILE_NAME = "apluse_config.json"
+# 兼容旧版的配置文件名
+OLD_CONFIG_FILE_NAME = "mask_config.json"
 CHUNK_SIZE = 4 * 1024 * 1024  # 4MB 分块大小
 
 class DisguiseError(Exception):
@@ -24,7 +27,6 @@ class PathManager:
         打包后：返回 .exe 文件所在的外部物理目录。
         未打包：返回当前 .py 脚本所在的目录。
         """
-        # Nuitka 或 PyInstaller 打包时，sys.argv[0] 始终指向真实的 .exe 绝对路径
         if getattr(sys, "frozen", False) or "__compiled__" in globals():
             return Path(sys.argv[0]).resolve().parent
         return Path(__file__).resolve().parent
@@ -33,8 +35,6 @@ class PathManager:
     def get_resource_dir() -> Path:
         """
         获取只读资源目录（读取图标、UI等静态文件用）。
-        PyInstaller: 返回 sys._MEIPASS 临时解压目录
-        Nuitka / 本地: 返回 __file__ 所在目录 (Nuitka 会将其指向临时解压目录)
         """
         if hasattr(sys, '_MEIPASS'):
             return Path(sys._MEIPASS)
@@ -50,6 +50,7 @@ def normalize_config(data) -> dict:
     if not isinstance(data, dict): data = {}
     mask_library = data.get("mask_library", [])
     if not isinstance(mask_library, list): mask_library = []
+    
     magic_hex = data.get("magic_hex", DEFAULT_MAGIC.hex())
     if not isinstance(magic_hex, str): magic_hex = DEFAULT_MAGIC.hex()
     try:
@@ -57,17 +58,55 @@ def normalize_config(data) -> dict:
         if not (1 <= len(magic_bytes) <= 32): magic_hex = DEFAULT_MAGIC.hex()
     except Exception:
         magic_hex = DEFAULT_MAGIC.hex()
-    return {"mask_library": mask_library, "magic_hex": magic_hex}
+        
+    theme_index = data.get("theme_index", 0)
+    if not isinstance(theme_index, int) or not (0 <= theme_index <= 6):
+        theme_index = 0
+        
+    return {
+        "mask_library": mask_library, 
+        "magic_hex": magic_hex, 
+        "theme_index": theme_index
+    }
 
 def load_config() -> dict:
-    config_path = get_config_path()
-    if not config_path.exists(): return normalize_config({})
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return normalize_config(data)
-    except Exception:
-        return normalize_config({})
+    new_config_path = get_config_path()
+    old_config_path = PathManager.get_persist_dir() / OLD_CONFIG_FILE_NAME
+
+    # 1. 优先尝试加载新版配置文件
+    if new_config_path.exists():
+        try:
+            with open(new_config_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return normalize_config(data)
+        except Exception:
+            return normalize_config({})
+            
+    # 2. 🟢【兼容升级逻辑】：如果新版不存在，且存在旧版配置 (mask_config.json)
+    if old_config_path.exists():
+        try:
+            with open(old_config_path, "r", encoding="utf-8") as f:
+                old_data = json.load(f)
+                
+            # 将旧数据标准化（自动补全主题等新字段）
+            migrated_data = normalize_config(old_data)
+            
+            # 立即将数据写入新版配置文件，完成无缝迁移
+            with open(new_config_path, "w", encoding="utf-8") as f:
+                json.dump(migrated_data, f, ensure_ascii=False, indent=2)
+                
+            # 将旧文件重命名为备份文件，防止后续重复读取产生干扰
+            try:
+                old_config_path.rename(old_config_path.with_name(f"{OLD_CONFIG_FILE_NAME}.bak"))
+            except Exception:
+                pass # 若重命名由于权限问题失败，也不影响主流程
+                
+            return migrated_data
+        except Exception:
+            pass
+
+    # 3. 全新安装，返回默认配置
+    return normalize_config({})
 
 def save_config(config: dict):
     config = normalize_config(config)
@@ -429,10 +468,7 @@ class DisguiseEngine:
 
         return success, failed
 
-    # ==== 修改点：修复 Nuitka 下获取真实 Python 路径的问题 ====
     def _get_real_python(self) -> str:
-        # 在打包环境下，sys.executable 会指向你的 .exe 程序自己。
-        # 如果让你的 exe 去执行 -m Pyinstaller 肯定会报错。
         if getattr(sys, "frozen", False) or "__compiled__" in globals():
             if shutil.which("python"): return "python"
             if shutil.which("py"): return "py"
@@ -473,17 +509,14 @@ class DisguiseEngine:
         except Exception as e:
             raise DisguiseError(f"启动安装进程失败: {e}")
 
-    # ==== 极限瘦身版 打包 EXE 方法 ====
     def generate_restore_exe(self, output_dir: Path, log_cb, process_events_cb=None):
         python_exe = self._get_real_python()
         self._ensure_pyinstaller(log_cb, process_events_cb, python_exe)
 
         magic = self.get_magic_bytes()
         script_name = "restore_all_disguised.py"
-        # 【修改】使用持久化目录作为写临时文件的安全区
         py_script_path = PathManager.get_persist_dir() / script_name
 
-        # 更新内部生成的 Python 代码，使其使用 sys.argv[0] 获取安全路径
         script_content = f'''import sys\nimport os\nimport struct\nfrom pathlib import Path\nMAGIC = bytes.fromhex("{magic.hex()}")\nCHUNK_SIZE = 4 * 1024 * 1024\n'''
         script_content += '''
 def xor_bytes(data: bytes, key: bytes) -> bytes:
