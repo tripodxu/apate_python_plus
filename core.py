@@ -165,33 +165,37 @@ def parse_disguised_metadata(file_obj, file_size: int, magic: bytes):
                             "original_name": candidate, "original_size": original_size}
     except Exception: pass
 
-    # --- v1 解析逻辑：向下兼容（结构体明文且不包含 original_size） ---
-    file_obj.seek(-(len(magic) + 4), os.SEEK_END)
-    head_len = struct.unpack("<I", file_obj.read(4))[0]
-    file_obj.seek(-(len(magic) + 5), os.SEEK_END)
-    name_len = struct.unpack("B", file_obj.read(1))[0]
-    if name_len > file_size: raise DisguiseError("文件结构异常：名称长度非法")
-    name_pos = file_size - len(magic) - 5 - name_len
-    if name_pos < 0: raise DisguiseError("文件结构异常：name_pos 非法")
-    head_pos = name_pos - head_len
-    if head_pos < 0: raise DisguiseError("文件结构异常：head_pos 非法")
-    file_obj.seek(name_pos)
-    raw_name = file_obj.read(name_len)
-    if len(raw_name) != name_len: raise DisguiseError("文件结构异常：名称长度不足")
+    # --- v1 解析逻辑：向下兼容与终极兜底 ---
     try:
-        decoded = raw_name.decode("utf-8")
-        candidate = Path(decoded).name
-        if candidate and candidate == decoded and decoded not in (".", ".."):
-            original_name = candidate
-        else: raise ValueError("不是完整文件名")
-    except Exception:
-        try: original_suffix = raw_name.decode("utf-8")
-        except Exception as e: raise DisguiseError(f"无法解析原始文件名/后缀：{e}")
-        original_name = Path(file_obj.name).stem + original_suffix
+        file_obj.seek(-(len(magic) + 4), os.SEEK_END)
+        head_len = struct.unpack("<I", file_obj.read(4))[0]
+        file_obj.seek(-(len(magic) + 5), os.SEEK_END)
+        name_len = struct.unpack("B", file_obj.read(1))[0]
+        if name_len > file_size: raise DisguiseError("名称长度非法")
+        name_pos = file_size - len(magic) - 5 - name_len
+        if name_pos < 0: raise DisguiseError("name_pos 非法")
+        head_pos = name_pos - head_len
+        if head_pos < 0: raise DisguiseError("head_pos 非法")
+        file_obj.seek(name_pos)
+        raw_name = file_obj.read(name_len)
+        if len(raw_name) != name_len: raise DisguiseError("名称长度不足")
+        try:
+            decoded = raw_name.decode("utf-8")
+            candidate = Path(decoded).name
+            if candidate and candidate == decoded and decoded not in (".", ".."):
+                original_name = candidate
+            else: raise ValueError("不是完整文件名")
+        except Exception:
+            try: original_suffix = raw_name.decode("utf-8")
+            except Exception as e: raise DisguiseError(f"无法解析后缀：{e}")
+            original_name = Path(file_obj.name).stem + original_suffix
 
-    return {"format": "v1", "head_len": head_len, "name_len": name_len,
-            "name_pos": name_pos, "head_pos": head_pos, "original_name": original_name,
-            "original_size": head_pos}
+        return {"format": "v1", "head_len": head_len, "name_len": name_len,
+                "name_pos": name_pos, "head_pos": head_pos, "original_name": original_name,
+                "original_size": head_pos}
+    except Exception as e:
+        # 抛出具体的崩溃原因，提醒用户数据可能被损坏或魔术字错误
+        raise DisguiseError("解析失败：文件已被损坏、被平台二次压缩，或当前使用的魔术字错误！")
 
 def is_disguised_file(file_path: str, magic: bytes) -> bool:
     path = Path(file_path)
@@ -219,20 +223,29 @@ def disguise_file(file_path: str, mask_path: str, magic: bytes, reserved_output_
     original_size = file_path.stat().st_size
     actual_head_len = min(mask_size, original_size)
 
+    # 关键修复1：计算安全追加偏移量，防止面具文件过大时覆写原文件备份数据
+    safe_append_offset = max(original_size, mask_size)
+
     with open(file_path, "r+b") as f:
-        # 优化1：分块流式读取原文件头部，逆序追加到尾部
-        f.seek(0, os.SEEK_END)
+        # 确保文件尾部扩展到安全边界
+        f.seek(safe_append_offset)
+        f.truncate(safe_append_offset)
+
+        # 优化1：分块流式读取原文件头部，逆序追加到【安全位置】
         bytes_left = actual_head_len
         while bytes_left > 0:
             read_size = min(CHUNK_SIZE, bytes_left)
             offset = bytes_left - read_size
             f.seek(offset)
             chunk = f.read(read_size)
-            f.seek(0, os.SEEK_END)
+            
+            # 计算正确的写入位置
+            write_offset = safe_append_offset + (actual_head_len - bytes_left)
+            f.seek(write_offset)
             f.write(chunk[::-1])
             bytes_left -= read_size
 
-        # 优化2：分块流式写入面具文件内容
+        # 优化2：分块流式写入面具文件内容（此时写入0~mask_size范围是绝对安全的）
         f.seek(0)
         with open(mask_path, "rb") as mf:
             while True:
@@ -279,6 +292,7 @@ def reveal_file(file_path: str, magic: bytes, reserved_output_paths=None) -> str
             read_offset += read_size
             bytes_left -= read_size
 
+        # 无论数据在不在安全区，最后一步统统裁切恢复回原尺寸
         f.truncate(meta["original_size"])
 
     desired_path = file_path.parent / meta["original_name"]
@@ -467,7 +481,7 @@ class DisguiseEngine:
         script_name = "restore_all_disguised.py"
         py_script_path = get_app_dir() / script_name
 
-        # 同样将动态打包的 EXE 恢复脚本升级为兼容 v4 架构
+        # 同样将动态打包的 EXE 恢复脚本同步更新兜底逻辑
         script_content = f'''import sys\nimport os\nimport struct\nfrom pathlib import Path\nMAGIC = bytes.fromhex("{magic.hex()}")\nCHUNK_SIZE = 4 * 1024 * 1024\n'''
         script_content += '''
 def xor_bytes(data: bytes, key: bytes) -> bytes:
@@ -531,16 +545,19 @@ def parse_metadata(f, sz):
                 if c: return {"hlen": hlen, "hpos": hpos, "name": c, "osize": osize}
     except Exception: pass
     
-    # Fallback to v1
-    f.seek(-(len(MAGIC)+4), os.SEEK_END)
-    hlen = struct.unpack("<I", f.read(4))[0]
-    f.seek(-(len(MAGIC)+5), os.SEEK_END)
-    nlen = struct.unpack("B", f.read(1))[0]
-    npos, hpos = sz - len(MAGIC) - 5 - nlen, sz - len(MAGIC) - 5 - nlen - hlen
-    f.seek(npos)
-    try: name = Path(f.read(nlen).decode("utf-8")).name
-    except Exception: name = Path(f.name).stem + f.read(nlen).decode("utf-8")
-    return {"hlen": hlen, "hpos": hpos, "name": name, "osize": hpos}
+    # Fallback to v1 & Safety Catch
+    try:
+        f.seek(-(len(MAGIC)+4), os.SEEK_END)
+        hlen = struct.unpack("<I", f.read(4))[0]
+        f.seek(-(len(MAGIC)+5), os.SEEK_END)
+        nlen = struct.unpack("B", f.read(1))[0]
+        npos, hpos = sz - len(MAGIC) - 5 - nlen, sz - len(MAGIC) - 5 - nlen - hlen
+        f.seek(npos)
+        try: name = Path(f.read(nlen).decode("utf-8")).name
+        except Exception: name = Path(f.name).stem + f.read(nlen).decode("utf-8")
+        return {"hlen": hlen, "hpos": hpos, "name": name, "osize": hpos}
+    except Exception:
+        raise Exception("解析失败：文件已被损坏、被平台二次压缩，或当前使用的魔术字错误！")
 
 def reveal_file(fp: Path, reserved):
     with open(fp, "r+b") as f:
