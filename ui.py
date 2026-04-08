@@ -9,9 +9,10 @@ from PyQt5.QtWidgets import (
     QStackedWidget, QGraphicsDropShadowEffect
 )
 
+# 【修改】：导入 PathManager
 from core import (
     DisguiseEngine, DisguiseError, collect_files_from_paths,
-    get_app_dir, magic_to_display_text
+    PathManager, magic_to_display_text
 )
 
 
@@ -29,7 +30,6 @@ class DetectWorker(QThread):
 
     def run(self):
         try:
-            # 传入 emit 发送信号，传入 lambda: None 替代原来的 processEvents
             o, d, f = self.engine.detect_status(self.prog_sig.emit, self.log_sig.emit, lambda: None)
             self.done_sig.emit(o, d, f)
         except Exception as e:
@@ -173,7 +173,7 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.engine = DisguiseEngine()
-        self.current_worker = None  # 保持对当前线程的引用，防止被垃圾回收
+        self.current_worker = None
         self.init_ui()
         self.refresh_mask_list()
         self.refresh_magic_ui()
@@ -202,7 +202,8 @@ class MainWindow(QWidget):
         subtitle.setObjectName("mainSubtitle")
         subtitle.setWordWrap(True)
 
-        self.status_label = QLabel(f"程序目录：{get_app_dir()}")
+        # 【修改】: UI 上显示的运行根目录指明了数据实际持久化存放在哪里
+        self.status_label = QLabel(f"配置保存目录：{PathManager.get_persist_dir()}")
         self.status_label.setObjectName("statusInfo")
         self.status_label.setWordWrap(True)
 
