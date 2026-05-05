@@ -35,9 +35,14 @@ class PathManager:
     def get_resource_dir() -> Path:
         """
         获取只读资源目录（读取图标、UI等静态文件用）。
+        兼容 PyInstaller 和 Nuitka 两种打包方式。
         """
+        # PyInstaller 解压目录
         if hasattr(sys, '_MEIPASS'):
             return Path(sys._MEIPASS)
+        # Nuitka 编译后，资源文件与 .exe 同目录
+        if "__compiled__" in globals():
+            return Path(sys.argv[0]).resolve().parent
         return Path(__file__).resolve().parent
 
 
@@ -278,7 +283,12 @@ def disguise_file(file_path: str, mask_path: str, magic: bytes, reserved_output_
     actual_head_len = min(mask_size, original_size)
     safe_append_offset = max(original_size, mask_size)
 
-    with open(file_path, "r+b") as f:
+    try:
+        f = open(file_path, "r+b")
+    except PermissionError:
+        raise DisguiseError(f"无法打开文件（可能被占用）: {file_path}\n请关闭可能正在使用该文件的程序后重试。")
+
+    with f:
         f.seek(safe_append_offset)
         f.truncate(safe_append_offset)
 
@@ -297,7 +307,8 @@ def disguise_file(file_path: str, mask_path: str, magic: bytes, reserved_output_
         with open(mask_path, "rb") as mf:
             while True:
                 chunk = mf.read(CHUNK_SIZE)
-                if not chunk: break
+                if not chunk:
+                    break
                 f.write(chunk)
 
         meta_struct = struct.pack("B", len(obfuscated_name_bytes)) + \
@@ -307,19 +318,27 @@ def disguise_file(file_path: str, mask_path: str, magic: bytes, reserved_output_
 
         f.seek(0, os.SEEK_END)
         f.write(obfuscated_name_bytes)
-        f.write(encrypted_meta_struct) 
+        f.write(encrypted_meta_struct)
         f.write(magic)
 
     desired_path = file_path.with_suffix(mask_path.suffix)
     disguised_path = build_non_conflicting_path(desired_path, "disguised", reserved_output_paths)
-    os.replace(str(file_path), str(disguised_path))
+    try:
+        shutil.move(str(file_path), str(disguised_path))
+    except PermissionError:
+        raise DisguiseError(f"文件被占用或无权限移动: {file_path}\n请关闭可能正在使用该文件的程序后重试。")
     return str(disguised_path)
 
 def reveal_file(file_path: str, magic: bytes, reserved_output_paths=None) -> str:
     file_path = Path(file_path)
     if not is_disguised_file(str(file_path), magic): raise DisguiseError("非当前魔术字对应伪装文件")
 
-    with open(file_path, "r+b") as f:
+    try:
+        f = open(file_path, "r+b")
+    except PermissionError:
+        raise DisguiseError(f"无法打开文件（可能被占用）: {file_path}\n请关闭可能正在使用该文件的程序后重试。")
+
+    with f:
         meta = parse_disguised_metadata(f, file_path.stat().st_size, magic)
         bytes_left = meta["head_len"]
         read_offset = meta["head_pos"]
@@ -338,7 +357,10 @@ def reveal_file(file_path: str, magic: bytes, reserved_output_paths=None) -> str
     restored_path = desired_path
     if str(desired_path.resolve()) in {str(Path(p).resolve()) for p in (reserved_output_paths or [])}:
         restored_path = build_non_conflicting_path(desired_path, "restored", reserved_output_paths)
-    os.replace(str(file_path), str(restored_path))
+    try:
+        shutil.move(str(file_path), str(restored_path))
+    except PermissionError:
+        raise DisguiseError(f"文件被占用或无权限移动: {file_path}\n请关闭可能正在使用该文件的程序后重试。")
     return str(restored_path)
 
 
@@ -352,8 +374,11 @@ class DisguiseEngine:
 
     def _load_mask_library_from_config(self):
         library = self.config.get("mask_library", [])
+        old_library = self.mask_library[:] if self.mask_library else []
         self.mask_library = [s for s in (str(Path(p).resolve()) for p in library) if Path(s).is_file()]
-        self.save_config()
+        # 只在面具库实际发生变化时才写磁盘（如启动时有文件被移除）
+        if self.mask_library != old_library:
+            self.save_config()
 
     def save_config(self):
         self.config["mask_library"] = self.mask_library[:]
@@ -402,9 +427,13 @@ class DisguiseEngine:
         return common_dir
 
     def get_random_mask_file(self) -> str:
+        # 过滤无效文件，但不立即写磁盘（批量操作时由调用方统一保存）
+        original_len = len(self.mask_library)
         self.mask_library = [p for p in self.mask_library if Path(p).is_file()]
-        self.save_config()
-        if not self.mask_library: raise DisguiseError("面具库为空")
+        if len(self.mask_library) != original_len:
+            self.save_config()
+        if not self.mask_library:
+            raise DisguiseError("面具库为空")
         return random.choice(self.mask_library)
 
     def detect_status(self, progress_cb, log_cb, process_events_cb):
