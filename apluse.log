@@ -426,3 +426,156 @@
 [2026-05-07 15:05:12] 伪装完成：E:\mimo\deemo\deemo_disguised_1.mp4
 [2026-05-07 15:05:12] 执行周期结束。成功:2 失败:0
 [2026-05-07 15:27:00] APLUSE ENGINE 初始化成功
+[2026-05-07 15:45:33] APLUSE ENGINE 初始化成功
+[2026-05-07 15:51:25] APLUSE ENGINE 初始化成功
+[2026-05-07 15:51:46] 目标装载: +1 项
+[2026-05-07 15:51:57] 目标队列已格式化
+[2026-05-07 15:56:23] APLUSE ENGINE 初始化成功
+[2026-05-07 15:56:37] 目标装载: +1 项
+[2026-05-07 15:56:39] 开始检测，魔术字：HEX=4A903513 | BYTES=b'J\x905\x13' | TEXT=<非UTF-8字节序列>
+[2026-05-07 15:56:39] [伪装态] E:\mimo\deemo\deemo.mp4
+[2026-05-07 15:56:47] 执行自动切换，魔术字：HEX=4A903513 | BYTES=b'J\x905\x13' | TEXT=<非UTF-8字节序列>
+[2026-05-07 15:56:47] 准备还原：E:\mimo\deemo\deemo.mp4
+[2026-05-07 15:56:47] 还原完成：E:\mimo\deemo\deemo.zip
+[2026-05-07 15:56:47] 执行周期结束。成功:1 失败:0
+[2026-05-07 15:56:57] APLUSE ENGINE 初始化成功
+[2026-05-07 15:57:01] 目标装载: +1 项
+[2026-05-07 15:58:33] 目标装载: +0 项
+[2026-05-07 16:00:08] APLUSE ENGINE 初始化成功
+[2026-05-07 16:00:11] 目标装载: +1 项
+[2026-05-07 16:00:18] 执行自动切换，魔术字：HEX=4A903513 | BYTES=b'J\x905\x13' | TEXT=<非UTF-8字节序列>
+[2026-05-07 16:00:18] 准备伪装(使用 F:\本站下载\库\16-有人画皮，有人画心，我在画梦-480P 标清-AVC.mp4)：E:\mimo\deemo\deemo.zip
+[2026-05-07 16:00:18] 伪装完成：E:\mimo\deemo\deemo.mp4
+[2026-05-07 16:00:18] 执行周期结束。成功:1 失败:0
+[2026-05-07 16:00:27] 执行自动切换，魔术字：HEX=4A903513 | BYTES=b'J\x905\x13' | TEXT=<非UTF-8字节序列>
+[2026-05-07 16:00:27] 准备还原：E:\mimo\deemo\deemo.mp4
+[2026-05-07 16:00:27] 还原完成：E:\mimo\deemo\deemo.zip
+[2026-05-07 16:00:27] 执行周期结束。成功:1 失败:0
+[2026-05-07 16:00:32] 执行自动切换，魔术字：HEX=4A903513 | BYTES=b'J\x905\x13' | TEXT=<非UTF-8字节序列>
+[2026-05-07 16:00:32] 准备伪装(使用 F:\本站下载\库\1-“這樣的季节真叫人心动~”-1080P 高清-AVC.mp4)：E:\mimo\deemo\deemo.zip
+[2026-05-07 16:00:32] 伪装完成：E:\mimo\deemo\deemo.mp4
+[2026-05-07 16:00:32] 执行周期结束。成功:1 失败:0
+[2026-05-07 16:00:59] 正在生成 Android 项目...
+[2026-05-07 16:00:59] 项目源码已生成
+[2026-05-07 16:00:59] 已将 icon.ico 转换为 Android 图标
+[2026-05-07 16:00:59] 未检测到 Gradle，请用 Android Studio 打开项目目录进行编译
+[2026-05-07 16:00:59] 项目路径: E:\mimo\deemo\apluse_restore_android
+[2026-05-07 16:00:59] Android 项目已就绪，请在 Android Studio 中打开: E:\mimo\deemo\apluse_restore_android
+[2026-05-07 16:00:59] Android 项目已生成，请用 Android Studio 打开编译: E:\mimo\deemo\apluse_restore_android
+[2026-05-07 16:04:38] APLUSE ENGINE 初始化成功
+[2026-05-07 16:04:43] 目标装载: +1 项
+[2026-05-07 16:04:47] 执行自动切换，魔术字：HEX=4A903513 | BYTES=b'J\x905\x13' | TEXT=<非UTF-8字节序列>
+[2026-05-07 16:04:47] 准备还原：E:\mimo\deemo\deemo.mp4
+[2026-05-07 16:04:47] 还原完成：E:\mimo\deemo\deemo.zip
+[2026-05-07 16:04:47] 执行周期结束。成功:1 失败:0
+[2026-05-07 16:04:56] 正在生成 Android 项目...
+[2026-05-07 16:04:56] 项目源码已生成
+[2026-05-07 16:04:56] 已将 icon.ico 转换为 Android 图标
+[2026-05-07 16:04:57] 未检测到 Gradle，请用 Android Studio 打开项目目录进行编译
+[2026-05-07 16:04:57] 项目路径: E:\mimo\deemo\apluse_restore_android
+[2026-05-07 16:04:57] Android 项目已就绪，请在 Android Studio 中打开: E:\mimo\deemo\apluse_restore_android
+[2026-05-07 16:04:57] Android 项目已生成，请用 Android Studio 打开编译: E:\mimo\deemo\apluse_restore_android
+[2026-05-07 16:12:36] 执行自动切换，魔术字：HEX=4A903513 | BYTES=b'J\x905\x13' | TEXT=<非UTF-8字节序列>
+[2026-05-07 16:12:36] 准备伪装(使用 F:\本站下载\库\13-清醒的梦，却醒不来-480P 标清-AVC.mp4)：E:\mimo\deemo\deemo.zip
+[2026-05-07 16:12:36] 伪装完成：E:\mimo\deemo\deemo.mp4
+[2026-05-07 16:12:36] 执行周期结束。成功:1 失败:0
+[2026-05-07 16:12:39] 目标装载: +1 项
+[2026-05-07 16:12:44] 执行自动切换，魔术字：HEX=4A903513 | BYTES=b'J\x905\x13' | TEXT=<非UTF-8字节序列>
+[2026-05-07 16:12:44] 准备还原：E:\mimo\deemo\deemo.mp4
+[2026-05-07 16:12:44] 还原完成：E:\mimo\deemo\deemo.zip
+[2026-05-07 16:12:44] 准备还原：E:\mimo\deemo\deemo_disguised_1.mp4
+[2026-05-07 16:12:44] 还原完成：E:\mimo\deemo\deemo.z01
+[2026-05-07 16:12:44] 执行周期结束。成功:2 失败:0
+[2026-05-07 16:12:49] 🚀 正在调用 PyInstaller 进行极限瘦身打包，请耐心等待...
+[2026-05-07 16:12:49] [PyInstaller] 316 INFO: PyInstaller: 6.19.0, contrib hooks: 2026.4
+[2026-05-07 16:12:49] [PyInstaller] 316 INFO: Python: 3.13.12 (conda)
+[2026-05-07 16:12:49] [PyInstaller] 345 INFO: Platform: Windows-10-10.0.19045-SP0
+[2026-05-07 16:12:49] [PyInstaller] 346 INFO: Python environment: C:\Users\lenovo\miniconda3
+[2026-05-07 16:12:49] [PyInstaller] 346 INFO: wrote E:\mimo\deemo\spec_pyinstaller_restore\4a903513_restore.spec
+[2026-05-07 16:12:49] [PyInstaller] 374 INFO: Module search paths (PYTHONPATH):
+[2026-05-07 16:12:49] [PyInstaller] ['E:\\mimo',
+[2026-05-07 16:12:49] [PyInstaller] 'C:\\Users\\lenovo\\miniconda3\\python313.zip',
+[2026-05-07 16:12:49] [PyInstaller] 'C:\\Users\\lenovo\\miniconda3\\DLLs',
+[2026-05-07 16:12:49] [PyInstaller] 'C:\\Users\\lenovo\\miniconda3\\Lib',
+[2026-05-07 16:12:49] [PyInstaller] 'C:\\Users\\lenovo\\miniconda3',
+[2026-05-07 16:12:49] [PyInstaller] 'C:\\Users\\lenovo\\miniconda3\\Lib\\site-packages',
+[2026-05-07 16:12:49] [PyInstaller] 'E:\\mimo']
+[2026-05-07 16:12:50] [PyInstaller] 1003 INFO: checking Analysis
+[2026-05-07 16:12:50] [PyInstaller] 1003 INFO: Building Analysis because Analysis-00.toc is non existent
+[2026-05-07 16:12:50] [PyInstaller] 1003 INFO: Looking for Python shared library...
+[2026-05-07 16:12:50] [PyInstaller] 1003 INFO: Using Python shared library: C:\Users\lenovo\miniconda3\python313.dll
+[2026-05-07 16:12:50] [PyInstaller] 1003 INFO: Running Analysis Analysis-00.toc
+[2026-05-07 16:12:50] [PyInstaller] 1003 INFO: Target bytecode optimization level: 0
+[2026-05-07 16:12:50] [PyInstaller] 1003 INFO: Initializing module dependency graph...
+[2026-05-07 16:12:50] [PyInstaller] 1005 INFO: Initializing module graph hook caches...
+[2026-05-07 16:12:50] [PyInstaller] 1054 INFO: Analyzing modules for base_library.zip ...
+[2026-05-07 16:12:51] [PyInstaller] 2662 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\lenovo\\miniconda3\\Lib\\site-packages\\PyInstaller\\hooks'
+[2026-05-07 16:12:53] [PyInstaller] 4587 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\lenovo\\miniconda3\\Lib\\site-packages\\PyInstaller\\hooks'
+[2026-05-07 16:12:54] [PyInstaller] 5384 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\lenovo\\miniconda3\\Lib\\site-packages\\PyInstaller\\hooks'
+[2026-05-07 16:12:55] [PyInstaller] 5894 INFO: Caching module dependency graph...
+[2026-05-07 16:12:55] [PyInstaller] 5935 INFO: Analyzing E:\mimo\4a903513_restore.py
+[2026-05-07 16:12:55] [PyInstaller] 5973 INFO: Processing module hooks (post-graph stage)...
+[2026-05-07 16:12:55] [PyInstaller] 5977 INFO: Performing binary vs. data reclassification (1 entries)
+[2026-05-07 16:12:55] [PyInstaller] 5979 INFO: Looking for ctypes DLLs
+[2026-05-07 16:12:55] [PyInstaller] 5982 INFO: Analyzing run-time hooks ...
+[2026-05-07 16:12:55] [PyInstaller] 5983 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\lenovo\\miniconda3\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+[2026-05-07 16:12:55] [PyInstaller] 5988 INFO: Creating base_library.zip...
+[2026-05-07 16:12:55] [PyInstaller] 6004 INFO: Looking for dynamic libraries
+[2026-05-07 16:12:55] [PyInstaller] 6117 INFO: Extra DLL search directories (AddDllDirectory): []
+[2026-05-07 16:12:55] [PyInstaller] 6117 INFO: Extra DLL search directories (PATH): []
+[2026-05-07 16:12:55] [PyInstaller] 6595 INFO: Warnings written to E:\mimo\deemo\build_pyinstaller_restore\4a903513_restore\warn-4a903513_restore.txt
+[2026-05-07 16:12:55] [PyInstaller] 6618 INFO: Graph cross-reference written to E:\mimo\deemo\build_pyinstaller_restore\4a903513_restore\xref-4a903513_restore.html
+[2026-05-07 16:12:55] [PyInstaller] 6637 INFO: checking PYZ
+[2026-05-07 16:12:55] [PyInstaller] 6637 INFO: Building PYZ because PYZ-00.toc is non existent
+[2026-05-07 16:12:55] [PyInstaller] 6637 INFO: Building PYZ (ZlibArchive) E:\mimo\deemo\build_pyinstaller_restore\4a903513_restore\PYZ-00.pyz
+[2026-05-07 16:12:56] [PyInstaller] 6745 INFO: Building PYZ (ZlibArchive) E:\mimo\deemo\build_pyinstaller_restore\4a903513_restore\PYZ-00.pyz completed successfully.
+[2026-05-07 16:12:56] [PyInstaller] 6752 INFO: checking PKG
+[2026-05-07 16:12:56] [PyInstaller] 6752 INFO: Building PKG because PKG-00.toc is non existent
+[2026-05-07 16:12:56] [PyInstaller] 6752 INFO: Building PKG (CArchive) 4a903513_restore.pkg
+[2026-05-07 16:12:57] [PyInstaller] 8376 INFO: Building PKG (CArchive) 4a903513_restore.pkg completed successfully.
+[2026-05-07 16:12:57] [PyInstaller] 8377 INFO: Bootloader C:\Users\lenovo\miniconda3\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\run.exe
+[2026-05-07 16:12:57] [PyInstaller] 8377 INFO: checking EXE
+[2026-05-07 16:12:57] [PyInstaller] 8377 INFO: Building EXE because EXE-00.toc is non existent
+[2026-05-07 16:12:57] [PyInstaller] 8378 INFO: Building EXE from EXE-00.toc
+[2026-05-07 16:12:57] [PyInstaller] 8378 INFO: Copying bootloader EXE to E:\mimo\deemo\4a903513_restore.exe
+[2026-05-07 16:12:57] [PyInstaller] 8437 INFO: Copying icon to EXE
+[2026-05-07 16:12:57] [PyInstaller] 8466 INFO: Copying 0 resources to EXE
+[2026-05-07 16:12:57] [PyInstaller] 8466 INFO: Embedding manifest in EXE
+[2026-05-07 16:12:57] [PyInstaller] 8494 INFO: Appending PKG archive to EXE
+[2026-05-07 16:12:57] [PyInstaller] 8588 INFO: Fixing EXE headers
+[2026-05-07 16:12:58] [PyInstaller] 8766 INFO: Building EXE from EXE-00.toc completed successfully.
+[2026-05-07 16:12:58] [PyInstaller] 8768 INFO: Build complete! The results are available in: E:\mimo\deemo
+[2026-05-07 16:12:58] 脱壳包导出成功: E:\mimo\deemo\4a903513_restore.exe
+[2026-05-07 16:13:01] 执行自动切换，魔术字：HEX=4A903513 | BYTES=b'J\x905\x13' | TEXT=<非UTF-8字节序列>
+[2026-05-07 16:13:01] 准备伪装(使用 F:\本站下载\库\5-平行世界，你未曾见过的风景-480P 标清-AVC.mp4)：E:\mimo\deemo\deemo.zip
+[2026-05-07 16:13:01] 伪装完成：E:\mimo\deemo\deemo.mp4
+[2026-05-07 16:13:01] 准备伪装(使用 F:\本站下载\库\13-清醒的梦，却醒不来-480P 标清-AVC.mp4)：E:\mimo\deemo\deemo.z01
+[2026-05-07 16:13:01] 伪装完成：E:\mimo\deemo\deemo_disguised_1.mp4
+[2026-05-07 16:13:01] 执行周期结束。成功:2 失败:0
+[2026-05-07 16:15:02] 目标装载: +4 项
+[2026-05-07 16:15:08] 执行自动切换，魔术字：HEX=4A903513 | BYTES=b'J\x905\x13' | TEXT=<非UTF-8字节序列>
+[2026-05-07 16:15:08] 准备伪装(使用 F:\本站下载\库\5-平行世界，你未曾见过的风景-480P 标清-AVC.mp4)：E:\mimo\deemo\deemo.mp4
+[2026-05-07 16:15:08] 失败：E:\mimo\deemo\deemo.mp4 -> 目标不存在: E:\mimo\deemo\deemo.mp4
+[2026-05-07 16:15:08] 准备伪装(使用 F:\本站下载\库\1-“后来才明白 生命久如暗室 不妨碍我明写春诗～”-480P 标清-AVC.mp4)：E:\mimo\deemo\deemo_disguised_1.mp4
+[2026-05-07 16:15:08] 失败：E:\mimo\deemo\deemo_disguised_1.mp4 -> 目标不存在: E:\mimo\deemo\deemo_disguised_1.mp4
+[2026-05-07 16:15:08] 准备伪装(使用 F:\本站下载\库\1-“這樣的季节真叫人心动~”-1080P 高清-AVC.mp4)：E:\mimo\deemo\deemo.z01
+[2026-05-07 16:15:08] 伪装完成：E:\mimo\deemo\deemo_disguised_2.mp4
+[2026-05-07 16:15:08] 准备伪装(使用 F:\本站下载\库\6-这种画面你见过吗？-480P 标清-AVC.mp4)：E:\mimo\deemo\deemo.z02
+[2026-05-07 16:15:08] 伪装完成：E:\mimo\deemo\deemo_disguised_3.mp4
+[2026-05-07 16:15:08] 准备伪装(使用 F:\本站下载\库\1-“趁天空不注意，偷一点云朵送给你～”-480P 标清-AVC.mp4)：E:\mimo\deemo\deemo.z03
+[2026-05-07 16:15:08] 伪装完成：E:\mimo\deemo\deemo_disguised_4.mp4
+[2026-05-07 16:15:08] 准备伪装(使用 F:\本站下载\库\1-“这大概就是美到窒息的感觉吧”-480P 标清-AVC.mp4)：E:\mimo\deemo\deemo.zip
+[2026-05-07 16:15:08] 伪装完成：E:\mimo\deemo\deemo_disguised_5.mp4
+[2026-05-07 16:15:08] 执行周期结束。成功:4 失败:2
+[2026-05-07 16:15:11] 目标队列已格式化
+[2026-05-07 16:17:34] 目标装载: +4 项
+[2026-05-07 16:17:37] 执行自动切换，魔术字：HEX=4A903513 | BYTES=b'J\x905\x13' | TEXT=<非UTF-8字节序列>
+[2026-05-07 16:17:37] 准备伪装(使用 F:\本站下载\库\1-“这大概就是美到窒息的感觉吧”-480P 标清-AVC.mp4)：E:\mimo\deemo\2.z01
+[2026-05-07 16:17:37] 伪装完成：E:\mimo\deemo\2.mp4
+[2026-05-07 16:17:37] 准备伪装(使用 F:\本站下载\库\1-“后来才明白 生命久如暗室 不妨碍我明写春诗～”-480P 标清-AVC.mp4)：E:\mimo\deemo\2.z02
+[2026-05-07 16:17:37] 伪装完成：E:\mimo\deemo\2_disguised_1.mp4
+[2026-05-07 16:17:38] 准备伪装(使用 F:\本站下载\库\1-“前方开启护眼模式～”-480P 标清-AVC.mp4)：E:\mimo\deemo\2.z03
+[2026-05-07 16:17:38] 伪装完成：E:\mimo\deemo\2_disguised_2.mp4
+[2026-05-07 16:17:38] 准备伪装(使用 F:\本站下载\库\15-当最后一束光消失的时候，你还有什么放不下呢-480P 标清-AVC.mp4)：E:\mimo\deemo\2.zip
+[2026-05-07 16:17:38] 伪装完成：E:\mimo\deemo\2_disguised_3.mp4
+[2026-05-07 16:17:38] 执行周期结束。成功:4 失败:0

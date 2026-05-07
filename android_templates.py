@@ -27,7 +27,7 @@ include ':app'
 
 PROJECT_BUILD_GRADLE = """\
 plugins {
-    id 'com.android.application' version '7.4.2' apply false
+    id 'com.android.application' version '8.2.0' apply false
 }
 """
 
@@ -38,12 +38,12 @@ plugins {
 
 android {
     namespace '__PACKAGE_NAME__'
-    compileSdkVersion 33
+    compileSdk 34
 
     defaultConfig {
         applicationId "__PACKAGE_NAME__"
         minSdk 21
-        targetSdk 33
+        targetSdk 34
         versionCode 1
         versionName "1.0"
     }
@@ -69,7 +69,7 @@ org.gradle.jvmargs=-Xmx2048m
 GRADLE_WRAPPER_PROPERTIES = """\
 distributionBase=GRADLE_USER_HOME
 distributionPath=wrapper/dists
-distributionUrl=https\://mirrors.cloud.tencent.com/gradle/gradle-7.5.1-bin.zip
+distributionUrl=https\://mirrors.cloud.tencent.com/gradle/gradle-8.5-bin.zip
 zipStoreBase=GRADLE_USER_HOME
 zipStorePath=wrapper/dists
 """

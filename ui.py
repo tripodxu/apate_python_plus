@@ -1,3 +1,4 @@
+
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -57,7 +58,7 @@ class CustomTitleBar(QFrame):
         layout.setContentsMargins(20, 0, 20, 0)
         layout.setSpacing(12)
         
-        title_label = QLabel("✨ APLUSE ENGINE v3.3")
+        title_label = QLabel("✨ APLUSE ENGINE v3.4")
         title_label.setObjectName("titleLabel")
         layout.addWidget(title_label)
         
@@ -146,7 +147,7 @@ class CustomDropList(QListWidget):
     def dropEvent(self, event):
         self.setProperty("drag", "none")
         self.style().unpolish(self); self.style().polish(self)
-        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        paths =[u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
         if paths:
             if self.drop_type == "target": 
                 self.window_ref.ui_add_target_paths(paths)
@@ -197,15 +198,16 @@ class MainWindow(QWidget):
         self.resize(1280, 860)
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setContentsMargins(16, 16, 16, 16)
 
         self.container = QFrame()
         self.container.setObjectName("mainContainer")
 
+        # 更现代、柔和的阴影表现
         self.shadow = QGraphicsDropShadowEffect()
-        self.shadow.setBlurRadius(20)
-        self.shadow.setColor(QColor(0, 0, 0, 150))
-        self.shadow.setOffset(0, 0)
+        self.shadow.setBlurRadius(25)
+        self.shadow.setColor(QColor(0, 0, 0, 100))
+        self.shadow.setOffset(0, 4)
         self.container.setGraphicsEffect(self.shadow)
 
         container_layout = QVBoxLayout(self.container)
@@ -216,8 +218,8 @@ class MainWindow(QWidget):
         container_layout.addWidget(self.title_bar)
 
         dashboard_layout = QVBoxLayout()
-        dashboard_layout.setContentsMargins(24, 16, 24, 24)
-        dashboard_layout.setSpacing(20)
+        dashboard_layout.setContentsMargins(24, 20, 24, 24)
+        dashboard_layout.setSpacing(16)
 
         # ==================== 顶行：密钥 + 状态 ====================
         top_row = QHBoxLayout()
@@ -226,7 +228,14 @@ class MainWindow(QWidget):
         magic_card = QFrame()
         magic_card.setObjectName("card")
         m_layout = QVBoxLayout(magic_card)
-        m_layout.addWidget(self.make_label("🔑 核心密钥 (MAGIC WORD)", "cardTitle"))
+        m_layout.setContentsMargins(20, 16, 20, 16)
+        
+        m_header = QHBoxLayout()
+        m_header.addWidget(self.make_label("🔑 核心密钥 (MAGIC WORD)", "cardTitle"))
+        self.magic_info_label = self.make_label("当前状态：未加载", "subText")
+        m_header.addStretch()
+        m_header.addWidget(self.magic_info_label)
+        m_layout.addLayout(m_header)
 
         m_input_row = QHBoxLayout()
         self.magic_edit = QLineEdit()
@@ -245,16 +254,14 @@ class MainWindow(QWidget):
         m_input_row.addWidget(btn_rand)
         m_input_row.addWidget(btn_reset)
         m_layout.addLayout(m_input_row)
-
-        self.magic_info_label = self.make_label("当前状态：未加载", "subText")
-        m_layout.addWidget(self.magic_info_label)
         top_row.addWidget(magic_card, 2)
 
         stat_card = QFrame()
         stat_card.setObjectName("card")
         stat_layout = QVBoxLayout(stat_card)
+        stat_layout.setContentsMargins(20, 16, 20, 16)
         stat_layout.addWidget(self.make_label("📡 系统状态", "cardTitle"))
-        self.status_label = self.make_label(f"持久化：{PathManager.get_persist_dir()}", "subText")
+        self.status_label = self.make_label(f"持久化：\n{PathManager.get_persist_dir()}", "subText")
         self.status_label.setWordWrap(True)
         stat_layout.addWidget(self.status_label)
         stat_layout.addStretch()
@@ -264,80 +271,91 @@ class MainWindow(QWidget):
 
         # ==================== 中行：目标 + 面具 ====================
         file_row = QHBoxLayout()
-        file_row.setSpacing(20)
+        file_row.setSpacing(16)
 
+        # 目标卡片
         t_card = QFrame()
         t_card.setObjectName("card")
         t_layout = QVBoxLayout(t_card)
+        t_layout.setContentsMargins(20, 16, 20, 16)
+        
         t_header = QHBoxLayout()
         t_header.addWidget(self.make_label("🎯 目标执行队列", "cardTitle"))
         self.t_count_label = self.make_label("0 项", "badge")
         t_header.addWidget(self.t_count_label)
         t_header.addStretch()
+        
+        # 将原有的独立按钮行折叠进 Header，视觉更清爽
+        self.btn_t_add = self.make_btn("➕ 文件", "secondary")
+        self.btn_t_add.clicked.connect(self.ui_select_targets)
+        self.btn_t_add.setToolTip("Ctrl+O")
+        self.btn_t_add_dir = self.make_btn("📁 目录", "secondary")
+        self.btn_t_add_dir.clicked.connect(self.ui_select_target_folder)
+        self.btn_t_rm = self.make_btn("➖ 移除", "secondary")
+        self.btn_t_rm.clicked.connect(self.ui_rm_targets)
+        self.btn_t_rm.setToolTip("Delete")
+        self.btn_t_clr = self.make_btn("🗑️ 清空", "danger")
+        self.btn_t_clr.clicked.connect(self.ui_clr_targets)
+        
+        t_header.addWidget(self.btn_t_add)
+        t_header.addWidget(self.btn_t_add_dir)
+        t_header.addWidget(self.btn_t_rm)
+        t_header.addWidget(self.btn_t_clr)
         t_layout.addLayout(t_header)
 
         self.target_list = CustomDropList("📥 拖拽目标文件/文件夹至此", "target", self)
         t_layout.addWidget(self.target_list)
-
-        t_btn_row = QHBoxLayout()
-        self.btn_t_add = self.make_btn("📂选择文件", "secondary")
-        self.btn_t_add.clicked.connect(self.ui_select_targets)
-        self.btn_t_add.setToolTip("Ctrl+O")
-        self.btn_t_add_dir = self.make_btn("📁选择文件夹", "secondary")
-        self.btn_t_add_dir.clicked.connect(self.ui_select_target_folder)
-        self.btn_t_rm = self.make_btn("➖移除选中", "secondary")
-        self.btn_t_rm.clicked.connect(self.ui_rm_targets)
-        self.btn_t_rm.setToolTip("Delete")
-        self.btn_t_clr = self.make_btn("🗑️清空", "danger")
-        self.btn_t_clr.clicked.connect(self.ui_clr_targets)
-        t_btn_row.addWidget(self.btn_t_add)
-        t_btn_row.addWidget(self.btn_t_add_dir)
-        t_btn_row.addWidget(self.btn_t_rm)
-        t_btn_row.addWidget(self.btn_t_clr)
-        t_layout.addLayout(t_btn_row)
         file_row.addWidget(t_card)
 
+        # 面具卡片
         mask_card = QFrame()
         mask_card.setObjectName("card")
-        mask_card_layout = QVBoxLayout(mask_card)
-        mask_header = QHBoxLayout()
-        mask_header.addWidget(self.make_label("🎭 伪装面具文件库", "cardTitle"))
+        mask_layout = QVBoxLayout(mask_card)
+        mask_layout.setContentsMargins(20, 16, 20, 16)
+        
+        m_header = QHBoxLayout()
+        m_header.addWidget(self.make_label("🎭 伪装面具图库", "cardTitle"))
         self.m_count_label = self.make_label("0 项", "badge")
-        mask_header.addWidget(self.m_count_label)
-        mask_header.addStretch()
-        mask_card_layout.addLayout(mask_header)
-
-        self.mask_list = CustomDropList("🖼️ 拖拽面具文件/文件夹至此", "mask", self)
-        mask_card_layout.addWidget(self.mask_list)
-
-        mask_btn_row = QHBoxLayout()
-        self.btn_m_add = self.make_btn("📂选择面具", "secondary")
+        m_header.addWidget(self.m_count_label)
+        m_header.addStretch()
+        
+        self.btn_m_add = self.make_btn("➕ 文件", "secondary")
         self.btn_m_add.clicked.connect(self.ui_select_masks)
         self.btn_m_add.setToolTip("Ctrl+Shift+O")
-        self.btn_m_add_dir = self.make_btn("📁选择文件夹", "secondary")
+        self.btn_m_add_dir = self.make_btn("📁 目录", "secondary")
         self.btn_m_add_dir.clicked.connect(self.ui_select_mask_folder)
-        self.btn_m_rm = self.make_btn("➖移除选中", "secondary")
+        self.btn_m_rm = self.make_btn("➖ 移除", "secondary")
         self.btn_m_rm.clicked.connect(self.ui_rm_masks)
         self.btn_m_rm.setToolTip("Delete")
-        self.btn_m_clr = self.make_btn("🗑️清空", "danger")
+        self.btn_m_clr = self.make_btn("🗑️ 清空", "danger")
         self.btn_m_clr.clicked.connect(self.ui_clr_masks)
-        mask_btn_row.addWidget(self.btn_m_add)
-        mask_btn_row.addWidget(self.btn_m_add_dir)
-        mask_btn_row.addWidget(self.btn_m_rm)
-        mask_btn_row.addWidget(self.btn_m_clr)
-        mask_card_layout.addLayout(mask_btn_row)
+        
+        m_header.addWidget(self.btn_m_add)
+        m_header.addWidget(self.btn_m_add_dir)
+        m_header.addWidget(self.btn_m_rm)
+        m_header.addWidget(self.btn_m_clr)
+        mask_layout.addLayout(m_header)
+
+        self.mask_list = CustomDropList("🖼️ 拖拽面具文件/文件夹至此", "mask", self)
+        mask_layout.addWidget(self.mask_list)
         file_row.addWidget(mask_card)
 
         dashboard_layout.addLayout(file_row, 1)
 
         # ==================== 底行：日志 + 操作 ====================
         bot_row = QHBoxLayout()
-        bot_row.setSpacing(20)
+        bot_row.setSpacing(16)
 
         log_card = QFrame()
         log_card.setObjectName("card")
         log_layout = QVBoxLayout(log_card)
-        log_layout.setContentsMargins(10, 10, 10, 10)
+        log_layout.setContentsMargins(20, 16, 20, 20)
+        
+        log_header = QHBoxLayout()
+        log_header.addWidget(self.make_label("📝 运行日志", "cardTitle"))
+        log_header.addStretch()
+        log_layout.addLayout(log_header)
+        
         self.log_edit = QTextEdit()
         self.log_edit.setObjectName("terminal")
         self.log_edit.setReadOnly(True)
@@ -347,38 +365,57 @@ class MainWindow(QWidget):
         act_card = QFrame()
         act_card.setObjectName("card")
         act_layout = QVBoxLayout(act_card)
-
+        act_layout.setContentsMargins(20, 16, 20, 20)
+        
+        act_layout.addWidget(self.make_label("⚙️ 控制面板", "cardTitle"))
+        
+        # 进度指示器区
+        prog_layout = QVBoxLayout()
+        prog_layout.setSpacing(8)
         self.progress_label = self.make_label("等待任务指令...", "subText")
         self.progress_bar = QProgressBar()
         self.progress_bar.setObjectName("neonProgress")
-        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.setFixedHeight(6)  # 细版进度条更具现代感
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setRange(0, 100)
-        act_layout.addWidget(self.progress_label)
-        act_layout.addWidget(self.progress_bar)
-        act_layout.addSpacing(10)
-
-        self.btn_detect = self.make_btn("🔍 扫描分析队列", "secondary")
-        self.btn_detect.clicked.connect(self.ui_detect)
-        self.btn_detect.setToolTip("Ctrl+D")
-        act_layout.addWidget(self.btn_detect)
-
-        # 生成恢复程序（下拉菜单选择 EXE / APK）
-        self.btn_gen = self.make_btn("📦 生成恢复程序", "secondary")
-        gen_menu = QMenu(self)
-        act_gen_exe = gen_menu.addAction("📦  Windows 恢复程序 (.exe)")
-        act_gen_apk = gen_menu.addAction("📱  Android 恢复包 (.apk)")
-        act_gen_exe.triggered.connect(self.ui_gen_exe)
-        act_gen_apk.triggered.connect(self.ui_gen_apk)
-        self.btn_gen.setMenu(gen_menu)
-        act_layout.addWidget(self.btn_gen)
+        prog_layout.addWidget(self.progress_label)
+        prog_layout.addWidget(self.progress_bar)
+        act_layout.addLayout(prog_layout)
 
         act_layout.addStretch()
 
-        self.btn_toggle = self.make_btn("⚡ 引擎启动 (伪装/还原)", "primary")
-        self.btn_toggle.setFixedHeight(56)
+        # 功能网格
+        tools_layout = QGridLayout()
+        tools_layout.setSpacing(12)
+        
+        self.btn_detect = self.make_btn("🔍 扫描分析队列", "secondary")
+        self.btn_detect.clicked.connect(self.ui_detect)
+        self.btn_detect.setToolTip("Ctrl+D")
+        tools_layout.addWidget(self.btn_detect, 0, 0)
+
+        # 恢复程序菜单
+        self.btn_gen = self.make_btn("📦 生成恢复程序", "secondary")
+        gen_menu = QMenu(self)
+        act_gen_exe = gen_menu.addAction("🪟 Windows 恢复程序 (.exe)")
+        act_gen_apk = gen_menu.addAction("📱 Android 恢复包 (.apk)")
+        act_gen_exe.triggered.connect(self.ui_gen_exe)
+        act_gen_apk.triggered.connect(self.ui_gen_apk)
+        self.btn_gen.setMenu(gen_menu)
+        tools_layout.addWidget(self.btn_gen, 0, 1)
+
+        act_layout.addLayout(tools_layout)
+        act_layout.addSpacing(12)
+
+        self.btn_toggle = self.make_btn("⚡ 启动引擎", "primary")
+        self.btn_toggle.setFixedHeight(50)
         self.btn_toggle.clicked.connect(self.ui_toggle)
         self.btn_toggle.setToolTip("Ctrl+Enter")
+        # 使主按钮字体醒目
+        font = self.btn_toggle.font()
+        font.setBold(True)
+        font.setPointSize(11)
+        self.btn_toggle.setFont(font)
+        
         act_layout.addWidget(self.btn_toggle)
 
         bot_row.addWidget(act_card, 1)
@@ -389,6 +426,7 @@ class MainWindow(QWidget):
 
     def _toggle_toolbox(self):
         """展开/收起生成工具栏。"""
+        if not hasattr(self, 'toolbox_content'): return
         is_visible = self.toolbox_content.isVisible()
         if is_visible:
             # 收起
@@ -464,7 +502,7 @@ class MainWindow(QWidget):
     # ======== UI 交互方法 ========
 
     def set_ui_busy(self, busy: bool):
-        controls = [
+        controls =[
             self.btn_t_add, self.btn_t_add_dir, self.btn_t_rm, self.btn_t_clr,
             self.btn_detect, self.btn_m_add, self.btn_m_add_dir, self.btn_m_rm,
             self.btn_m_clr, self.btn_gen, self.magic_edit,
@@ -474,7 +512,7 @@ class MainWindow(QWidget):
         self.target_list.setEnabled(not busy)
         self.mask_list.setEnabled(not busy)
         
-        self.btn_toggle.setText("⚡ 引擎高转速处理中..." if busy else "⚡ 引擎启动 (伪装/还原)")
+        self.btn_toggle.setText("⚡ 引擎高转速处理中..." if busy else "⚡ 启动引擎")
 
     def cb_log(self, text: str):
         self.log_edit.append(f"> {text}")
@@ -612,7 +650,7 @@ class MainWindow(QWidget):
         if not selected:
             return
         sels = {i.data(Qt.UserRole) for i in selected}
-        self.engine.mask_library = [p for p in self.engine.mask_library if p not in sels]
+        self.engine.mask_library =[p for p in self.engine.mask_library if p not in sels]
         self.engine.save_config()
         self.refresh_mask_list()
         self.cb_log(f"面具库清理: -{len(sels)} 项")
