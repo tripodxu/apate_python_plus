@@ -107,6 +107,13 @@ def build_qss(p: dict) -> str:
         QFrame#titleBar {{ background-color: {p['BG_MAIN']}; border-top-left-radius: 12px; border-top-right-radius: 12px; border-bottom: 1px solid {p['BORDER']}; }}
         QLabel#titleLabel {{ color: {p['TEXT_TITLE']}; font-size: 12px; font-weight: bold; letter-spacing: 1px; }}
 
+        QPushButton#toolboxHeader {{
+            background: {p['BG_CARD']}; color: {p['TEXT_SUB']}; border: 1px solid {p['BORDER']};
+            border-radius: 8px; text-align: left; padding: 6px 14px; font-size: 13px; font-weight: 600;
+        }}
+        QPushButton#toolboxHeader:hover {{ background: {p['LIST_HOVER']}; color: {p['TEXT_MAIN']}; }}
+        QFrame#toolboxContent {{ background: {p['BG_CARD']}; border: 1px solid {p['BORDER']}; border-top: none; border-radius: 0 0 8px 8px; }}
+
         QPushButton#macClose, QPushButton#macMin, QPushButton#macMax {{
             padding: 0px !important; margin: 0px !important;
             border-radius: 7px;

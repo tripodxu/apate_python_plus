@@ -118,6 +118,18 @@ def save_config(config: dict):
     with open(get_config_path(), "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
 
+def format_file_size(size_bytes: int) -> str:
+    """将字节大小格式化为人类可读的字符串。"""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
 def magic_to_display_text(magic: bytes) -> str:
     try: ascii_part = magic.decode("utf-8")
     except Exception: ascii_part = "<非UTF-8字节序列>"
@@ -240,15 +252,19 @@ def parse_disguised_metadata(file_obj, file_size: int, magic: bytes):
         file_obj.seek(name_pos)
         raw_name = file_obj.read(name_len)
         if len(raw_name) != name_len: raise DisguiseError("名称长度不足")
+        # 一次性读取完毕，后续不再 seek/read，避免文件指针问题
         try:
             decoded = raw_name.decode("utf-8")
             candidate = Path(decoded).name
             if candidate and candidate == decoded and decoded not in (".", ".."):
                 original_name = candidate
-            else: raise ValueError("不是完整文件名")
+            else:
+                raise ValueError("不是完整文件名")
         except Exception:
-            try: original_suffix = raw_name.decode("utf-8")
-            except Exception as e: raise DisguiseError(f"无法解析后缀：{e}")
+            try:
+                original_suffix = raw_name.decode("utf-8")
+            except Exception as e:
+                raise DisguiseError(f"无法解析后缀：{e}")
             original_name = Path(file_obj.name).stem + original_suffix
 
         return {"format": "v1", "head_len": head_len, "name_len": name_len,
@@ -364,6 +380,287 @@ def reveal_file(file_path: str, magic: bytes, reserved_output_paths=None) -> str
     return str(restored_path)
 
 
+# =================== 恢复脚本模板 ===================
+# 解析逻辑与 parse_disguised_metadata 保持一致，避免维护两份代码。
+
+_RESTORE_SCRIPT_TEMPLATE = '''import sys
+import os
+import struct
+from pathlib import Path
+
+MAGIC = bytes.fromhex("__MAGIC_HEX__")
+CHUNK_SIZE = 4 * 1024 * 1024
+SELF_NAMES = {__SELF_NAMES_SET__}
+
+
+def xor_bytes(data: bytes, key: bytes) -> bytes:
+    if not key:
+        return data
+    return bytes([b ^ key[i % len(key)] for i, b in enumerate(data)])
+
+
+def get_base_dir() -> Path:
+    if getattr(sys, "frozen", False) or "__compiled__" in globals():
+        return Path(sys.argv[0]).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def is_disguised_file(p: Path) -> bool:
+    try:
+        if p.stat().st_size < (1 + 4 + len(MAGIC)):
+            return False
+        with open(p, "rb") as f:
+            f.seek(-len(MAGIC), os.SEEK_END)
+            return f.read(len(MAGIC)) == MAGIC
+    except Exception:
+        return False
+
+
+def _try_parse_name(raw_bytes, magic):
+    """尝试从原始字节中解析文件名，优先 XOR 解密，回退明文。"""
+    try:
+        decoded = xor_bytes(raw_bytes, magic).decode("utf-8")
+        if decoded and decoded == Path(decoded).name and decoded not in (".", ".."):
+            return decoded
+    except Exception:
+        pass
+    try:
+        decoded = raw_bytes.decode("utf-8")
+        if decoded and decoded == Path(decoded).name and decoded not in (".", ".."):
+            return decoded
+    except Exception:
+        pass
+    return None
+
+
+def parse_metadata(f, sz):
+    f.seek(-len(MAGIC), os.SEEK_END)
+    if f.read(len(MAGIC)) != MAGIC:
+        raise Exception("标记无效")
+
+    # v4: 加密元数据  name_len(1B XOR) + head_len(4B XOR) + original_size(8B XOR) + magic
+    try:
+        if sz >= len(MAGIC) + 13:
+            f.seek(-(len(MAGIC) + 13), os.SEEK_END)
+            dec_meta = xor_bytes(f.read(13), MAGIC)
+            nlen = dec_meta[0]
+            hlen = struct.unpack("<I", dec_meta[1:5])[0]
+            osize = struct.unpack("<Q", dec_meta[5:13])[0]
+            npos = sz - len(MAGIC) - 13 - nlen
+            hpos = npos - hlen
+            if 0 <= npos <= sz and 0 <= hpos <= sz:
+                f.seek(npos)
+                raw = f.read(nlen)
+                name = _try_parse_name(raw, MAGIC)
+                if name:
+                    return {"hlen": hlen, "hpos": hpos, "name": name, "osize": osize}
+    except Exception:
+        pass
+
+    # v2/v3: 明文元数据  name_len(1B) + head_len(4B) + original_size(8B) + magic
+    try:
+        if sz >= len(MAGIC) + 13:
+            f.seek(-(len(MAGIC) + 8), os.SEEK_END)
+            osize = struct.unpack("<Q", f.read(8))[0]
+            f.seek(-(len(MAGIC) + 12), os.SEEK_END)
+            hlen = struct.unpack("<I", f.read(4))[0]
+            f.seek(-(len(MAGIC) + 13), os.SEEK_END)
+            nlen = struct.unpack("B", f.read(1))[0]
+            npos = sz - len(MAGIC) - 13 - nlen
+            hpos = npos - hlen
+            if 0 <= npos <= sz and 0 <= hpos <= sz:
+                f.seek(npos)
+                raw_name = f.read(nlen)
+                name = _try_parse_name(raw_name, MAGIC)
+                if name:
+                    return {"hlen": hlen, "hpos": hpos, "name": name, "osize": osize}
+    except Exception:
+        pass
+
+    # v1:  name_len(1B) + head_len(4B) + magic  (无 original_size)
+    f.seek(-(len(MAGIC) + 4), os.SEEK_END)
+    hlen = struct.unpack("<I", f.read(4))[0]
+    f.seek(-(len(MAGIC) + 5), os.SEEK_END)
+    nlen = struct.unpack("B", f.read(1))[0]
+    if nlen > sz:
+        raise Exception("名称长度非法")
+    npos = sz - len(MAGIC) - 5 - nlen
+    if npos < 0:
+        raise Exception("name_pos 非法")
+    hpos = npos - hlen
+    if hpos < 0:
+        raise Exception("head_pos 非法")
+    f.seek(npos)
+    raw_name = f.read(nlen)
+    if len(raw_name) != nlen:
+        raise Exception("名称长度不足")
+    # 一次性读取完毕，后续不再 seek/read，避免文件指针问题
+    name = _try_parse_name(raw_name, MAGIC)
+    if not name:
+        # 回退：当作后缀拼接
+        try:
+            suffix = raw_name.decode("utf-8")
+        except Exception as e:
+            raise Exception(f"无法解析后缀: {e}")
+        name = Path(fp_name).stem + suffix
+    return {"hlen": hlen, "hpos": hpos, "name": name, "osize": hpos}
+
+
+def reveal_file(fp: Path, reserved):
+    global fp_name
+    fp_name = fp.name
+    with open(fp, "r+b") as f:
+        meta = parse_metadata(f, fp.stat().st_size)
+        bytes_left, read_offset = meta["hlen"], meta["hpos"]
+        while bytes_left > 0:
+            read_size = min(CHUNK_SIZE, bytes_left)
+            f.seek(read_offset)
+            chunk = f.read(read_size)
+            write_offset = bytes_left - read_size
+            f.seek(write_offset)
+            f.write(chunk[::-1])
+            read_offset += read_size
+            bytes_left -= read_size
+        f.truncate(meta["osize"])
+
+    dp = fp.parent / meta["name"]
+    rest = dp
+    if str(dp.resolve()) in reserved:
+        idx = 1
+        while True:
+            c = dp.with_name(f"{dp.stem}_restored_{idx}{dp.suffix}")
+            if str(c.resolve()) not in reserved and not c.exists():
+                rest = c
+                break
+            idx += 1
+    fp.replace(rest)
+    return rest
+
+
+fp_name = ""
+
+
+def main():
+    global fp_name
+    bd = get_base_dir()
+    print(f"扫描: {bd}\\n魔术字: {MAGIC.hex()}\\n" + "-" * 40)
+    res, fail = 0, 0
+    reserved = {str(p.resolve()) for p in bd.rglob("*") if p.is_file()}
+    for p in bd.rglob("*"):
+        if p.is_file() and p.name.lower() not in SELF_NAMES:
+            try:
+                reserved.discard(str(p.resolve()))
+                if is_disguised_file(p):
+                    fp_name = p.name
+                    np = reveal_file(p, reserved)
+                    reserved.add(str(np.resolve()))
+                    res += 1
+                    print(f"[恢复] {p.name} -> {np.name}")
+            except Exception as e:
+                fail += 1
+                print(f"[失败] {p.name} -> {e}")
+    print(f"\\n完成: 成功 {res}, 失败 {fail}")
+    input("按回车退出...")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def _build_restore_script(magic_hex: str, script_filename: str) -> str:
+    """根据模板生成恢复脚本源码。"""
+    self_names = f'"{script_filename}", "{script_filename.replace(".py", ".exe")}"'
+    return (
+        _RESTORE_SCRIPT_TEMPLATE
+        .replace("__MAGIC_HEX__", magic_hex)
+        .replace("__SELF_NAMES_SET__", self_names)
+    )
+
+
+def _build_android_project(magic_hex: str, project_dir: Path, script_name: str):
+    """将 Android 项目模板写入指定目录。"""
+    from android_templates import (
+        GRADLE_SETTINGS, PROJECT_BUILD_GRADLE, APP_BUILD_GRADLE, GRADLE_PROPERTIES,
+        GRADLE_WRAPPER_PROPERTIES,
+        ANDROID_MANIFEST, ACTIVITY_MAIN_XML, STRINGS_XML, COLORS_XML, STYLES_XML,
+        RESTORE_ENGINE_JAVA, MAIN_ACTIVITY_JAVA,
+    )
+
+    pkg = "com.apluse.restore"
+    app_name = "APLUSE 3.3"
+    self_names_set = f'"{script_name}", "{script_name.replace(".py", ".exe")}"'
+
+    def apply(text):
+        return (text
+                .replace("__MAGIC_HEX__", magic_hex)
+                .replace("__APP_NAME__", app_name)
+                .replace("__PACKAGE_NAME__", pkg)
+                .replace("__SELF_NAMES_SET__", self_names_set))
+
+    pkg_dir = project_dir / "app" / "src" / "main" / "java" / "com" / "apluse" / "restore"
+    res_dir = project_dir / "app" / "src" / "main" / "res"
+    layout_dir = res_dir / "layout"
+    values_dir = res_dir / "values"
+    wrapper_dir = project_dir / "gradle" / "wrapper"
+
+    for d in [pkg_dir, layout_dir, values_dir, wrapper_dir]:
+        d.mkdir(parents=True, exist_ok=True)
+
+    # Gradle 文件
+    (project_dir / "settings.gradle").write_text(apply(GRADLE_SETTINGS), encoding="utf-8")
+    (project_dir / "build.gradle").write_text(apply(PROJECT_BUILD_GRADLE), encoding="utf-8")
+    (project_dir / "gradle.properties").write_text(apply(GRADLE_PROPERTIES), encoding="utf-8")
+    (project_dir / "app" / "build.gradle").write_text(apply(APP_BUILD_GRADLE), encoding="utf-8")
+    (wrapper_dir / "gradle-wrapper.properties").write_text(apply(GRADLE_WRAPPER_PROPERTIES), encoding="utf-8")
+
+    # AndroidManifest
+    manifest_dir = project_dir / "app" / "src" / "main"
+    (manifest_dir / "AndroidManifest.xml").write_text(apply(ANDROID_MANIFEST), encoding="utf-8")
+
+    # 资源文件
+    (layout_dir / "activity_main.xml").write_text(apply(ACTIVITY_MAIN_XML), encoding="utf-8")
+    (values_dir / "strings.xml").write_text(apply(STRINGS_XML), encoding="utf-8")
+    (values_dir / "colors.xml").write_text(apply(COLORS_XML), encoding="utf-8")
+    (values_dir / "styles.xml").write_text(apply(STYLES_XML), encoding="utf-8")
+
+    # Java 源码
+    (pkg_dir / "RestoreEngine.java").write_text(apply(RESTORE_ENGINE_JAVA), encoding="utf-8")
+    (pkg_dir / "MainActivity.java").write_text(apply(MAIN_ACTIVITY_JAVA), encoding="utf-8")
+
+
+def _convert_icon_for_android(project_dir: Path, log_cb):
+    """将 icon.ico 转换为 Android mipmap PNG 图标。"""
+    icon_path = PathManager.get_resource_dir() / "icon.ico"
+    if not icon_path.exists():
+        log_cb("icon.ico 不存在，跳过图标设置")
+        return
+
+    # Android 图标尺寸: mdpi=48, hdpi=72, xhdpi=96, xxhdpi=144, xxxhdpi=192
+    sizes = {
+        "mipmap-mdpi": 48,
+        "mipmap-hdpi": 72,
+        "mipmap-xhdpi": 96,
+        "mipmap-xxhdpi": 144,
+        "mipmap-xxxhdpi": 192,
+    }
+    res_dir = project_dir / "app" / "src" / "main" / "res"
+
+    try:
+        from PIL import Image
+        img = Image.open(str(icon_path))
+        for folder, size in sizes.items():
+            out_dir = res_dir / folder
+            out_dir.mkdir(parents=True, exist_ok=True)
+            resized = img.resize((size, size), Image.LANCZOS)
+            resized.save(str(out_dir / "ic_launcher.png"), "PNG")
+        log_cb("已将 icon.ico 转换为 Android 图标")
+    except ImportError:
+        log_cb("未安装 Pillow，跳过图标转换（pip install Pillow 可启用）")
+    except Exception as e:
+        log_cb(f"图标转换失败: {e}")
+
+
 # =================== 引擎状态类 ===================
 class DisguiseEngine:
     def __init__(self):
@@ -436,11 +733,11 @@ class DisguiseEngine:
             raise DisguiseError("面具库为空")
         return random.choice(self.mask_library)
 
-    def detect_status(self, progress_cb, log_cb, process_events_cb):
+    def detect_status(self, progress_cb, log_cb, process_events_cb=None):
         magic = self.get_magic_bytes()
         disguised_count, original_count, failed = 0, 0, []
         total = len(self.target_files)
-        
+
         log_cb(f"开始检测，魔术字：{magic_to_display_text(magic)}")
         progress_cb(0, total, "正在检测文件状态...", f"0/{total}")
 
@@ -454,11 +751,12 @@ class DisguiseEngine:
                     log_cb(f"[原始态] {path}")
             except Exception as e: failed.append(f"{path} -> {e}")
             progress_cb(index, total, "正在检测...", f"{index}/{total}")
-            process_events_cb()
+            if process_events_cb:
+                process_events_cb()
 
         return original_count, disguised_count, failed
 
-    def handle_toggle(self, progress_cb, log_cb, process_events_cb):
+    def handle_toggle(self, progress_cb, log_cb, process_events_cb=None):
         magic = self.get_magic_bytes()
         need_mask = any(not is_disguised_file(p, magic) for p in self.target_files)
         if need_mask and not self.mask_library:
@@ -493,7 +791,8 @@ class DisguiseEngine:
                 log_cb(f"失败：{old_path} -> {e}")
 
             progress_cb(index, total, "正在批处理...", f"已处理 {index}/{total}")
-            process_events_cb()
+            if process_events_cb:
+                process_events_cb()
 
         return success, failed
 
@@ -543,141 +842,24 @@ class DisguiseEngine:
         self._ensure_pyinstaller(log_cb, process_events_cb, python_exe)
 
         magic = self.get_magic_bytes()
-        script_name = "restore_all_disguised.py"
+        magic_tag = magic.hex()
+        script_name = f"{magic_tag}_restore.py"
         py_script_path = PathManager.get_persist_dir() / script_name
 
-        script_content = f'''import sys\nimport os\nimport struct\nfrom pathlib import Path\nMAGIC = bytes.fromhex("{magic.hex()}")\nCHUNK_SIZE = 4 * 1024 * 1024\n'''
-        script_content += '''
-def xor_bytes(data: bytes, key: bytes) -> bytes:
-    if not key: return data
-    return bytes([b ^ key[i % len(key)] for i, b in enumerate(data)])
-
-def get_base_dir() -> Path:
-    if getattr(sys, "frozen", False) or "__compiled__" in globals():
-        return Path(sys.argv[0]).resolve().parent
-    return Path(__file__).resolve().parent
-
-def is_disguised_file(p: Path) -> bool:
-    try:
-        if p.stat().st_size < (1+4+len(MAGIC)): return False
-        with open(p, "rb") as f:
-            f.seek(-len(MAGIC), os.SEEK_END)
-            return f.read(len(MAGIC)) == MAGIC
-    except Exception: return False
-
-def parse_metadata(f, sz):
-    f.seek(-len(MAGIC), os.SEEK_END)
-    if f.read(len(MAGIC)) != MAGIC: raise Exception("标记无效")
-    
-    try:
-        if sz >= len(MAGIC)+13:
-            f.seek(-(len(MAGIC)+13), os.SEEK_END)
-            dec = xor_bytes(f.read(13), MAGIC)
-            nlen, hlen, osize = dec[0], struct.unpack("<I", dec[1:5])[0], struct.unpack("<Q", dec[5:13])[0]
-            npos, hpos = sz - len(MAGIC) - 13 - nlen, sz - len(MAGIC) - 13 - nlen - hlen
-            if 0 <= npos <= sz and 0 <= hpos <= sz:
-                f.seek(npos)
-                raw = f.read(nlen)
-                try:
-                    dx = xor_bytes(raw, MAGIC).decode("utf-8")
-                    if dx and dx == Path(dx).name and dx not in (".", ".."): return {"hlen": hlen, "hpos": hpos, "name": dx, "osize": osize}
-                except Exception: pass
-    except Exception: pass
-
-    try:
-        if sz >= len(MAGIC)+13:
-            f.seek(-(len(MAGIC)+8), os.SEEK_END)
-            osize = struct.unpack("<Q", f.read(8))[0]
-            f.seek(-(len(MAGIC)+12), os.SEEK_END)
-            hlen = struct.unpack("<I", f.read(4))[0]
-            f.seek(-(len(MAGIC)+13), os.SEEK_END)
-            nlen = struct.unpack("B", f.read(1))[0]
-            npos, hpos = sz - len(MAGIC) - 13 - nlen, sz - len(MAGIC) - 13 - nlen - hlen
-            if 0 <= npos <= sz and 0 <= hpos <= sz:
-                f.seek(npos)
-                raw_name = f.read(nlen)
-                c = None
-                try:
-                    dx = xor_bytes(raw_name, MAGIC).decode("utf-8")
-                    if dx and dx == Path(dx).name and dx not in (".", ".."): c = dx
-                except Exception: pass
-                if not c:
-                    try:
-                        dp = raw_name.decode("utf-8")
-                        if dp and dp == Path(dp).name and dp not in (".", ".."): c = dp
-                    except Exception: pass
-                if c: return {"hlen": hlen, "hpos": hpos, "name": c, "osize": osize}
-    except Exception: pass
-    
-    try:
-        f.seek(-(len(MAGIC)+4), os.SEEK_END)
-        hlen = struct.unpack("<I", f.read(4))[0]
-        f.seek(-(len(MAGIC)+5), os.SEEK_END)
-        nlen = struct.unpack("B", f.read(1))[0]
-        npos, hpos = sz - len(MAGIC) - 5 - nlen, sz - len(MAGIC) - 5 - nlen - hlen
-        f.seek(npos)
-        try: name = Path(f.read(nlen).decode("utf-8")).name
-        except Exception: name = Path(f.name).stem + f.read(nlen).decode("utf-8")
-        return {"hlen": hlen, "hpos": hpos, "name": name, "osize": hpos}
-    except Exception:
-        raise Exception("解析失败：文件已被损坏、被平台二次压缩，或当前使用的魔术字错误！")
-
-def reveal_file(fp: Path, reserved):
-    with open(fp, "r+b") as f:
-        meta = parse_metadata(f, fp.stat().st_size)
-        bytes_left, read_offset = meta["hlen"], meta["hpos"]
-        while bytes_left > 0:
-            read_size = min(CHUNK_SIZE, bytes_left)
-            f.seek(read_offset)
-            chunk = f.read(read_size)
-            write_offset = bytes_left - read_size
-            f.seek(write_offset)
-            f.write(chunk[::-1])
-            read_offset += read_size
-            bytes_left -= read_size
-        f.truncate(meta["osize"])
-        
-    dp = fp.parent / meta["name"]
-    rest = dp
-    if str(dp.resolve()) in reserved:
-        idx = 1
-        while True:
-            c = dp.with_name(f"{dp.stem}_restored_{idx}{dp.suffix}")
-            if str(c.resolve()) not in reserved and not c.exists():
-                rest = c; break
-            idx += 1
-    fp.replace(rest)
-    return rest
-
-def main():
-    bd = get_base_dir()
-    print(f"扫描: {bd}\\n魔术字: {MAGIC.hex()}\\n"+"-"*40)
-    res, fail = 0, 0
-    reserved = {str(p.resolve()) for p in bd.rglob("*") if p.is_file()}
-    for p in bd.rglob("*"):
-        if p.is_file() and p.name.lower() not in {"restore_all_disguised.exe", "restore_all_disguised.py"}:
-            try:
-                reserved.discard(str(p.resolve()))
-                if is_disguised_file(p):
-                    np = reveal_file(p, reserved)
-                    reserved.add(str(np.resolve()))
-                    res += 1
-                    print(f"[恢复] {p.name} -> {np.name}")
-            except Exception as e: fail += 1; print(f"[失败] {p.name} -> {e}")
-    print(f"\\n完成: 成功 {res}, 失败 {fail}")
-    input("按回车退出...")
-
-if __name__ == "__main__": main()
-'''
+        script_content = _build_restore_script(magic_tag, script_name)
         try:
             with open(py_script_path, "w", encoding="utf-8") as f:
                 f.write(script_content)
-            
+
             output_dir.mkdir(parents=True, exist_ok=True)
             build_dir = output_dir / "build_pyinstaller_restore"
             spec_dir = output_dir / "spec_pyinstaller_restore"
-            exe_name = py_script_path.stem + ".exe"
+            restore_name = f"{magic_tag}_restore"
+            exe_name = restore_name + ".exe"
             dist_path = output_dir / exe_name
+
+            # 查找图标文件
+            icon_path = PathManager.get_resource_dir() / "icon.ico"
 
             kwargs = {}
             if sys.platform == "win32":
@@ -685,6 +867,7 @@ if __name__ == "__main__": main()
 
             cmd = [
                 python_exe, "-m", "PyInstaller", "--onefile",
+                "--name", restore_name,
                 "--exclude-module", "PyQt5",
                 "--exclude-module", "PyQt6",
                 "--exclude-module", "PySide2",
@@ -699,8 +882,10 @@ if __name__ == "__main__": main()
                 "--distpath", str(output_dir),
                 "--workpath", str(build_dir),
                 "--specpath", str(spec_dir),
-                str(py_script_path)
             ]
+            if icon_path.exists():
+                cmd.extend(["--icon", str(icon_path)])
+            cmd.append(str(py_script_path))
 
             log_cb(f"🚀 正在调用 PyInstaller 进行极限瘦身打包，请耐心等待...")
             
@@ -733,3 +918,62 @@ if __name__ == "__main__": main()
             return dist_path
         finally:
             if py_script_path.exists(): py_script_path.unlink()
+
+    def generate_restore_apk(self, output_dir: Path, log_cb, process_events_cb=None):
+        magic = self.get_magic_bytes()
+        magic_tag = magic.hex()
+        script_name = f"apluse_restore_{magic_tag}.py"
+
+        project_dir = output_dir / "apluse_restore_android"
+        log_cb("正在生成 Android 项目...")
+
+        _build_android_project(magic_tag, project_dir, script_name)
+        log_cb("项目源码已生成")
+
+        # 尝试将 icon.ico 转换为 Android PNG 图标
+        _convert_icon_for_android(project_dir, log_cb)
+
+        # 尝试使用 Gradle 编译
+        gradle_cmd = shutil.which("gradle") or shutil.which("gradlew")
+        apk_path = project_dir / "app" / "build" / "outputs" / "apk" / "release" / "app-release-unsigned.apk"
+
+        if gradle_cmd:
+            log_cb(f"检测到 Gradle: {gradle_cmd}，正在编译...")
+            try:
+                kwargs = {}
+                if sys.platform == "win32":
+                    kwargs["creationflags"] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+
+                process = subprocess.Popen(
+                    [gradle_cmd, "assembleRelease", "--no-daemon", "--quiet"],
+                    cwd=str(project_dir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    **kwargs,
+                )
+                for line in process.stdout:
+                    line = line.strip()
+                    if line:
+                        log_cb(f"[Gradle] {line}")
+                    if process_events_cb:
+                        process_events_cb()
+
+                process.wait()
+                if process.returncode == 0 and apk_path.exists():
+                    final_apk = output_dir / "apluse_restore.apk"
+                    shutil.copy2(str(apk_path), str(final_apk))
+                    shutil.rmtree(str(project_dir), ignore_errors=True)
+                    log_cb(f"编译成功: {final_apk.name}")
+                    return final_apk
+                else:
+                    log_cb("Gradle 编译失败，请使用 Android Studio 打开项目手动编译")
+            except Exception as e:
+                log_cb(f"Gradle 执行异常: {e}")
+        else:
+            log_cb("未检测到 Gradle，请用 Android Studio 打开项目目录进行编译")
+            log_cb(f"项目路径: {project_dir}")
+
+        # 无法自动编译时，返回项目目录路径
+        log_cb(f"Android 项目已就绪，请在 Android Studio 中打开: {project_dir}")
+        return project_dir
