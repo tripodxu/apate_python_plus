@@ -40,6 +40,14 @@
 
 ![v3.3-2](README.assets/image-20260409010347858.png)
 
+### v3.4
+
+![image-20260507173405311](README.assets/image-20260507173405311.png)
+
+#### 手机恢复：
+
+![Screenshot_20260507_174010](README.assets/mobile.jpg)
+
 ## 使用方式
 
 ### 基本操作
