@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.apluse.restore.app-mergeDebugResources-3:/values/values.xml",
+            "outputFile": "com.apluse.restore.app-mergeDebugResources-2:/values/values.xml",
             "map": [
                 {
                     "source": "E:\\mimo\\deemo\\apluse_restore_android\\app\\src\\main\\res\\values\\strings.xml",

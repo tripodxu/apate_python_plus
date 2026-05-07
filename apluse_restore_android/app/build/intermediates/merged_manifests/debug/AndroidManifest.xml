@@ -6,7 +6,7 @@
 
     <uses-sdk
         android:minSdkVersion="21"
-        android:targetSdkVersion="33" />
+        android:targetSdkVersion="34" />
 
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
@@ -14,8 +14,9 @@
 
     <application
         android:debuggable="true"
+        android:extractNativeLibs="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="APLUSE 3.3"
+        android:label="APLUSE 3.4"
         android:requestLegacyExternalStorage="true"
         android:theme="@style/AppTheme" >
         <activity

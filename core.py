@@ -588,7 +588,7 @@ def _build_android_project(magic_hex: str, project_dir: Path, script_name: str):
     )
 
     pkg = "com.apluse.restore"
-    app_name = "APLUSE 3.3"
+    app_name = "APLUSE 3.4"
     self_names_set = f'"{script_name}", "{script_name.replace(".py", ".exe")}"'
 
     def apply(text):
