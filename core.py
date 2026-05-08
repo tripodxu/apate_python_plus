@@ -977,3 +977,163 @@ class DisguiseEngine:
         # 无法自动编译时，返回项目目录路径
         log_cb(f"Android 项目已就绪，请在 Android Studio 中打开: {project_dir}")
         return project_dir
+
+    # =================== MCPK 集成 ===================
+
+    def generate_mcpk(self, output_path, log_cb=None, progress_cb=None,
+                      password=None, encrypt_mode="full", group_name=None,
+                      group_map=None):
+        """
+        将目标文件队列打包为 .mcpk 容器文件。
+
+        Args:
+            output_path: 输出 .mcpk 文件路径
+            log_cb: 日志回调 (可选)
+            progress_cb: 进度回调 (curr, total, title, detail) (可选)
+            password: 加密密码 (可选，None=不加密)
+            encrypt_mode: 加密模式 "full"/"metadata_only"/"data_only" (默认 "full")
+            group_name: 将所有文件归入同一分组 (可选，与 group_map 二选一)
+            group_map: 按文件分组 dict {file_path: group_name} (可选，优先于 group_name)
+
+        Returns:
+            输出文件路径 (str)
+        """
+        from mcpk import MCPKWriter
+
+        if not self.target_files:
+            raise DisguiseError("目标队列为空，无法打包")
+
+        output_path = Path(output_path)
+        if not output_path.suffix:
+            output_path = output_path.with_suffix(".mcpk")
+
+        valid_files = [p for p in self.target_files if Path(p).is_file()]
+        if not valid_files:
+            raise DisguiseError("目标队列中没有有效文件")
+
+        total = len(valid_files)
+        if log_cb:
+            enc_msg = f" (加密: {encrypt_mode})" if password else ""
+            group_count = len(set((group_map or {}).values())) if group_map else (1 if group_name else 0)
+            grp_msg = f" ({group_count} 个分组)" if group_count > 0 else ""
+            log_cb(f"开始 MCPK v2 打包: {total} 个文件 -> {output_path.name}{enc_msg}{grp_msg}")
+        if progress_cb:
+            progress_cb(0, total, "MCPK 打包中...", f"0/{total}")
+
+        with MCPKWriter(output_path, password=password, encrypt_mode=encrypt_mode) as writer:
+            for i, file_path in enumerate(valid_files, 1):
+                try:
+                    # 确定该文件的分组
+                    file_group = None
+                    if group_map and file_path in group_map:
+                        file_group = group_map[file_path]
+                    elif group_name:
+                        file_group = group_name
+
+                    entry = writer.add_file(file_path, group_name=file_group)
+                    if log_cb:
+                        grp_tag = f" [{file_group}]" if file_group else ""
+                        log_cb(f"  + {entry.name} ({format_file_size(entry.original_size)}, {entry.mime_type}){grp_tag}")
+                except Exception as e:
+                    if log_cb:
+                        log_cb(f"  ! 跳过 {Path(file_path).name}: {e}")
+                if progress_cb:
+                    progress_cb(i, total, "MCPK 打包中...", f"{i}/{total}")
+
+        file_size = output_path.stat().st_size
+        if log_cb:
+            log_cb(f"MCPK 打包完成: {format_file_size(file_size)}")
+        return str(output_path)
+
+    @staticmethod
+    def inspect_mcpk(mcpk_path, password=None):
+        """
+        检查 .mcpk 文件内容，返回条目列表和统计信息。
+
+        Args:
+            mcpk_path: .mcpk 文件路径
+            password: 解密密码 (加密文件必需)
+
+        Returns:
+            dict: 包含 entries, file_size, entry_count, total_original_size,
+                  encrypted, groups, relations, packed_at 等
+        """
+        from mcpk import MCPKReader, MCPKError as _MCPKError
+
+        mcpk_path = Path(mcpk_path)
+        if not mcpk_path.is_file():
+            raise DisguiseError(f"文件不存在: {mcpk_path}")
+
+        try:
+            with MCPKReader(mcpk_path, password=password) as reader:
+                return reader.inspect()
+        except _MCPKError as e:
+            raise DisguiseError(f"MCPK 解析失败: {e}")
+
+    @staticmethod
+    def is_mcpk_file(file_path):
+        """
+        检测文件是否为有效的 .mcpk 容器。
+
+        Args:
+            file_path: 文件路径
+
+        Returns:
+            bool
+        """
+        try:
+            p = Path(file_path)
+            if not p.is_file() or p.stat().st_size < 80:  # 64+16 minimum
+                return False
+            with open(p, "rb") as f:
+                magic = f.read(4)
+                return magic == b"MCPK"
+        except Exception:
+            return False
+
+    @staticmethod
+    def extract_mcpk_entry(mcpk_path, entry_name, output_dir, password=None):
+        """
+        从 .mcpk 文件中提取单个条目。
+
+        Args:
+            mcpk_path: .mcpk 文件路径
+            entry_name: 条目名称
+            output_dir: 输出目录
+            password: 解密密码 (加密文件必需)
+
+        Returns:
+            提取文件的路径 (str)
+        """
+        from mcpk import MCPKReader, MCPKError as _MCPKError
+
+        try:
+            with MCPKReader(mcpk_path, password=password) as reader:
+                out_path = reader.extract_to(entry_name, output_dir)
+                return str(out_path)
+        except _MCPKError as e:
+            raise DisguiseError(f"MCPK 提取失败: {e}")
+        except KeyError:
+            raise DisguiseError(f"条目不存在: {entry_name}")
+
+    @staticmethod
+    def extract_mcpk_all(mcpk_path, output_dir, password=None):
+        """
+        从 .mcpk 文件中提取全部条目。
+
+        Args:
+            mcpk_path: .mcpk 文件路径
+            output_dir: 输出目录
+            password: 解密密码 (加密文件必需)
+
+        Returns:
+            提取文件路径列表 (list[str])
+        """
+        from mcpk import MCPKReader, MCPKError as _MCPKError
+
+        try:
+            with MCPKReader(mcpk_path, password=password) as reader:
+                paths = reader.extract_all(output_dir)
+                return [str(p) for p in paths]
+        except _MCPKError as e:
+            raise DisguiseError(f"MCPK 提取失败: {e}")
