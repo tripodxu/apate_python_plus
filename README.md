@@ -1,77 +1,64 @@
-# APLUSE ENGINE v3.4
+# MCPK Manager v1.2
 
-基于 [apate](https://github.com/rippod/apate) 思路，用 Python 重新实现的文件伪装/还原工具。通过替换文件头部字节并追加加密元数据，将任意文件伪装为另一种格式（如将 `.rar` 伪装为 `.mp4`），同时支持一键还原，现在支持windows系统和安卓系统的还原。
+个人知识管理容器工具。将文档、图片、音频打包为单一 `.mcpk` 归档文件，支持浏览、提取、完整性校验。
 
-## 功能特性
+MCPK 格式规范与设计文档见 [MeCapsule](https://github.com/tripodxu/MeCapsule)。
 
-**核心能力**
-- 一键伪装/还原：自动识别文件当前状态，原始文件执行伪装，伪装文件执行还原
-- 批量处理：支持同时操作多个文件或整个文件夹
-- 支持使用面具池
-- 自定义魔术字：支持 HEX 和文本两种输入，可随机生成，用于标记伪装文件
+## `.mcpk` 容器格式
 
-**恢复工具生成**
-- Windows 恢复程序：打包为独立 `.exe`，无需 Python 环境即可在任意电脑上批量还原
-- Android 恢复包：生成 Android 项目，编译为 `.apk` 安装到手机端还原伪装文件
-- 恢复程序支持手动输入魔术字，同一工具可适配不同密钥
+MCPK（MeCapsule Package）是一种自定义二进制容器格式，专为个人知识管理设计。将多个文件及其元数据合并为单一 `.mcpk` 文件，无需解压即可随机访问任意条目。
 
-**界面与体验**
-- 7 套主题：暗色极客、亮色极简、渐变幽蓝、暗金奢华、猛男猛粉、辐射废土、低调暗紫
-- 拖拽添加：支持将文件/文件夹直接拖入列表
-- 文件大小显示：列表项和状态栏实时显示文件数量与总大小
-- 键盘快捷键：`Ctrl+O` 添加文件、`Delete` 删除选中、`Ctrl+D` 扫描、`Ctrl+Enter` 启动
-- 操作日志持久化：所有操作记录同步写入 `apluse.log`
+### 文件布局
 
-**安全与健壮**
-- 配置文件自动迁移：从旧版 `mask_config.json` 无缝升级到新版配置
-- 跨分区兼容：文件移动使用 `shutil.move`，支持不同盘符
-- 文件占用检测：被其他程序锁定时给出明确提示
-- 批量操作确认：执行前弹出二次确认，防止误操作
+```
+┌──────────────────────────────┐
+│  FILE HEADER (64 B)          │  magic="MCPK", version, toc_offset, entry_count ...
+├──────────────────────────────┤
+│  Entry Blob 0                │  原始数据（可能已压缩）
+│  Entry Blob 1                │
+│  ...                         │
+├──────────────────────────────┤
+│  TOC (目录表, 变长)           │  每条目: type, compression, crc32, name, mime, metadata
+├──────────────────────────────┤
+│  FOOTER (16 B)               │  magic + toc_offset + crc32
+└──────────────────────────────┘
+```
 
-## 截图
+### 条目类型
 
-### v3.1
+| 类型 | 扩展名示例 | 默认压缩 |
+|------|-----------|---------|
+| DOCUMENT | .md .txt .pdf .json .docx | 文本类 zlib，已压缩格式不压缩 |
+| IMAGE | .jpg .png .gif .webp .bmp | 已压缩格式不压缩，BMP 等 zlib |
+| AUDIO | .mp3 .wav .ogg .flac | 已压缩格式不压缩，WAV 等 zstd |
 
-![v3.1](README.assets/image-20260409010208641.png)
+### 设计特点
 
-### v3.3
+- **流式写入**：顺序写入 blob，最后写 TOC，适合打包大量文件
+- **随机读取**：通过 TOC 索引直接跳转到任意条目，无需顺序扫描
+- **独立压缩**：每条目单独选择压缩算法（zlib/zstd/lz4），已压缩格式自动跳过
+- **CRC32 校验**：每条目存储原始数据的 CRC32，读取时自动验证完整性
+- **内建元数据**：每条目可附带 JSON 元数据（标题、标签、自定义字段）
+- **条目关系**：通过 `parent_id` 和 `relationships` 建立条目间的关联（缩略图、附件、转写文本等）
+- **自描述**：文件头包含完整布局信息，不依赖外部配置
 
-![v3.3-1](README.assets/image-20260409010324267.png)
+### 二进制规格
 
-![v3.3-2](README.assets/image-20260409010347858.png)
+| 结构 | 大小 | 说明 |
+|------|------|------|
+| Header | 64 B 固定 | magic(4B) + version(2B) + flags(2B) + created_at(8B) + toc_offset(8B) + toc_size(8B) + entry_count(4B) + data_section_size(4B) + reserved(24B) |
+| TOC Entry | 变长 | type(1B) + compression(1B) + reserved(2B) + crc32(4B) + created_at(8B) + original_size(8B) + stored_size(8B) + blob_offset(8B) + name_len(2B) + name + mime_len(2B) + mime + meta_len(2B) + metadata |
+| Footer | 16 B 固定 | magic(4B) + toc_offset(8B) + footer_crc(4B) |
 
-### v3.4
+所有多字节整数采用小端序。完整规范见 [MCPK-DataFormat.md](https://github.com/tripodxu/MeCapsule/blob/main/MCPK-DataFormat.md)。
 
-![image-20260507173405311](README.assets/image-20260507173405311.png)
+## 功能
 
-#### 手机恢复：
-
-![Screenshot_20260507_174010](README.assets/mobile.jpg)
-
-## 使用方式
-
-### 基本操作
-
-1. 启动程序后，在「核心密钥」区域确认或修改魔术字
-2. 将目标文件拖入「目标执行队列」，或点击按钮选择
-3. 将伪装用的媒体文件拖入「面具文件库」
-4. 点击「引擎启动」即可自动完成伪装或还原
-
-### 生成恢复工具
-
-伪装完成后，点击「生成恢复程序」按钮，选择：
-- **Windows (.exe)**：生成 `{魔术字}_restore.exe`，放到伪装文件所在目录双击运行即可批量还原
-- **Android (.apk)**：生成 Android 项目，用 Android Studio 编译后安装到手机
-
-### 键盘快捷键
-
-| 快捷键 | 功能 |
-|---|---|
-| `Ctrl+O` | 添加目标文件 |
-| `Ctrl+Shift+O` | 添加面具文件 |
-| `Delete` | 删除选中项 |
-| `Ctrl+D` | 扫描分析队列 |
-| `Ctrl+Enter` | 启动引擎 |
+- 将任意文件/文件夹打包为 `.mcpk` 容器
+- 自动识别文件类型，按类型选择压缩策略
+- 内建元数据和 CRC32 完整性校验
+- 打开已有 `.mcpk` 文件，浏览条目、按文件提取、验证完整性
+- 拖拽添加文件，7 套主题切换，操作日志持久化
 
 ## 环境要求
 
@@ -97,25 +84,22 @@ pyinstaller --onefile --windowed --icon=icon.ico -n apluse --add-data "icon.ico;
 nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyqt5 --windows-icon-from-ico=icon.ico --output-filename=apluse --include-data-files=icon.ico=icon.ico --clean-cache=all main.py
 ```
 
-### 生成恢复工具的额外依赖
-
-生成 Windows 恢复程序需要系统中安装 Python 和 PyInstaller（程序会自动检测并安装）。
-
-生成 Android 恢复包需要 [Android Studio](https://developer.android.com/studio)，程序会自动创建完整项目，用 Android Studio 打开后一键编译即可。如需自动转换图标，需安装 `pip install Pillow`。
-
 ## 项目结构
 
 ```
 apluse/
 ├── main.py              # 程序入口
-├── core.py              # 核心引擎：伪装/还原逻辑、配置管理、恢复工具生成
-├── ui.py                # PyQt5 界面
+├── core.py              # 核心引擎：MCPK 集成、配置管理
+├── ui.py                # 主窗口（MCPK Manager）+ 共享 UI 组件
+├── ui_dev.py            # 扩展功能界面
 ├── themes.py            # 主题配色方案
 ├── android_templates.py # Android 项目模板
+├── mcpk/                # MCPK 容器格式库
+│   ├── __init__.py
+│   ├── constants.py     # 格式常量、MIME 映射
+│   ├── types.py         # TocEntry / FileHeader
+│   ├── writer.py        # MCPKWriter
+│   └── reader.py        # MCPKReader
 ├── icon.ico             # 应用图标
 └── apluse_config.json   # 配置文件（自动生成）
 ```
-
-## 致谢
-
-思路来源：[apate](https://github.com/rippod/apate)

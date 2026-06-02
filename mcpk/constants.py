@@ -16,7 +16,13 @@ ENCRYPTION_PARAMS_MAGIC = b"ENC0"
 HEADER_SIZE        = 64
 FOOTER_SIZE        = 16
 MAGIC_ENTRY_SIZE   = 48   # Magic Index 中每条目固定 48 字节
-ENCRYPTION_PARAMS_SIZE = 56  # Encryption Params 区固定 56 字节
+
+# Encryption Params 区：
+#   v2.1 (XOR):  56 字节 — salt 16B
+#   v2.2 (AES):  76 字节 — kdf_iterations 4B + salt 32B
+ENCRYPTION_PARAMS_SIZE_LEGACY = 56   # kdf_type=0x01 (SHA256_XOR)
+ENCRYPTION_PARAMS_SIZE_V2     = struct.calcsize("<4sBB 2s I 32s 32s")  # = 76
+ENCRYPTION_PARAMS_SIZE        = ENCRYPTION_PARAMS_SIZE_V2  # 写入默认用新版
 
 # ── struct 格式 ─────────────────────────────────────────────
 # v2 Header (64 字节):
@@ -40,11 +46,19 @@ FOOTER_SIZE_CALC = struct.calcsize(FOOTER_FMT)  # 16
 TOC_ENTRY_FIXED_FMT = "<BB2sI Q Q Q Q Q H"
 TOC_ENTRY_FIXED_SIZE = struct.calcsize(TOC_ENTRY_FIXED_FMT)  # 50
 
-# Encryption Params 区 (56 字节):
+# Encryption Params 区 — 旧版 56 字节 (kdf_type=0x01):
 #   params_magic(4s) + kdf_type(B) + encrypt_mode(B) + reserved(2s)
 #   + salt(16s) + control_key_hash(32s)
-ENCRYPTION_PARAMS_FMT = "<4sBB 2s 16s 32s"
-ENCRYPTION_PARAMS_SIZE_CALC = struct.calcsize(ENCRYPTION_PARAMS_FMT)  # 56
+ENCRYPTION_PARAMS_FMT_LEGACY = "<4sBB 2s 16s 32s"
+
+# Encryption Params 区 — 新版 76 字节 (kdf_type=0x02):
+#   params_magic(4s) + kdf_type(B) + encrypt_mode(B) + reserved(2s)
+#   + kdf_iterations(I) + salt(32s) + key_verify(32s)
+ENCRYPTION_PARAMS_FMT_V2 = "<4sBB 2s I 32s 32s"
+ENCRYPTION_PARAMS_SIZE_CALC = struct.calcsize(ENCRYPTION_PARAMS_FMT_V2)  # 76
+
+# 向后兼容：读取时根据 kdf_type 选择格式
+ENCRYPTION_PARAMS_FMT = ENCRYPTION_PARAMS_FMT_V2  # 写入默认用新版
 
 # Magic Index 头部: magic(4s) + entry_count(I) + index_size(I)
 MAGIC_INDEX_HEADER_FMT = "<4sII"
@@ -59,6 +73,11 @@ MAGIC_ENTRY_SIZE = struct.calcsize(MAGIC_ENTRY_FMT)  # 48
 # Group Index 头部: magic(4s) + group_count(I) + relation_count(I) + index_size(I)
 GROUP_INDEX_HEADER_FMT = "<4sIII"
 GROUP_INDEX_HEADER_SIZE = struct.calcsize(GROUP_INDEX_HEADER_FMT)  # 16
+
+# AES-GCM 常量
+AES_GCM_NONCE_SIZE = 12   # AES-GCM nonce 固定 12 字节
+AES_GCM_TAG_SIZE   = 16   # AES-GCM tag 固定 16 字节
+PBKDF2_DEFAULT_ITERATIONS = 600_000
 
 
 # ── 枚举 ───────────────────────────────────────────────────
@@ -98,6 +117,20 @@ class RelationType(IntEnum):
     REFERENCES  = 0x04
 
 
+class IntraRelationType(IntEnum):
+    """组内条目间关系类型枚举。"""
+    SUBTITLE_OF    = 0x00  # 字幕属于视频
+    ATTACHMENT_OF  = 0x01  # 附件属于主体文件
+    TRANSCRIPT_OF  = 0x02  # 转写文本属于音频/视频
+    THUMBNAIL_OF   = 0x03  # 缩略图属于原图
+    ANNOTATION_OF  = 0x04  # 批注属于文档
+    CHAPTER_OF     = 0x05  # 章节属于整体
+    SUPPLEMENT_OF  = 0x06  # 补充材料属于主体
+    DERIVED_FROM   = 0x07  # 由某文件派生
+    VERSION_OF     = 0x08  # 某文件的另一版本
+    CUSTOM         = 0xFF  # 用户自定义
+
+
 class EncryptionMode(IntEnum):
     """加密模式枚举。"""
     NONE           = 0x00  # 不加密
@@ -108,7 +141,8 @@ class EncryptionMode(IntEnum):
 
 class KdfType(IntEnum):
     """密钥派生函数类型。"""
-    SHA256_XOR = 0x01  # SHA-256 + XOR 流加密
+    SHA256_XOR = 0x01  # SHA-256 + XOR 流加密（v2.1 兼容）
+    PBKDF2_AES = 0x02  # PBKDF2-SHA256 + AES-256-GCM（v2.2 高强度）
 
 
 # ── 无分组标记 ──────────────────────────────────────────────
@@ -135,6 +169,37 @@ EXTENSION_MAP = {
     ".srt":  (EntryType.DOCUMENT, "application/x-subrip", Compression.ZLIB),
     ".vtt":  (EntryType.DOCUMENT, "text/vtt",            Compression.ZLIB),
     ".ass":  (EntryType.DOCUMENT, "text/x-ssa",          Compression.ZLIB),
+
+    # 代码
+    ".py":   (EntryType.DOCUMENT, "text/x-python",       Compression.ZLIB),
+    ".js":   (EntryType.DOCUMENT, "application/javascript", Compression.ZLIB),
+    ".ts":   (EntryType.DOCUMENT, "application/typescript", Compression.ZLIB),
+    ".jsx":  (EntryType.DOCUMENT, "text/x-jsx",          Compression.ZLIB),
+    ".tsx":  (EntryType.DOCUMENT, "text/x-tsx",          Compression.ZLIB),
+    ".java": (EntryType.DOCUMENT, "text/x-java-source",  Compression.ZLIB),
+    ".c":    (EntryType.DOCUMENT, "text/x-csrc",         Compression.ZLIB),
+    ".cpp":  (EntryType.DOCUMENT, "text/x-c++src",       Compression.ZLIB),
+    ".h":    (EntryType.DOCUMENT, "text/x-chdr",         Compression.ZLIB),
+    ".hpp":  (EntryType.DOCUMENT, "text/x-c++hdr",       Compression.ZLIB),
+    ".go":   (EntryType.DOCUMENT, "text/x-go",           Compression.ZLIB),
+    ".rs":   (EntryType.DOCUMENT, "text/x-rust",         Compression.ZLIB),
+    ".rb":   (EntryType.DOCUMENT, "text/x-ruby",         Compression.ZLIB),
+    ".php":  (EntryType.DOCUMENT, "application/x-php",   Compression.ZLIB),
+    ".swift":(EntryType.DOCUMENT, "text/x-swift",        Compression.ZLIB),
+    ".kt":   (EntryType.DOCUMENT, "text/x-kotlin",       Compression.ZLIB),
+    ".sh":   (EntryType.DOCUMENT, "application/x-shellscript", Compression.ZLIB),
+    ".bash": (EntryType.DOCUMENT, "application/x-shellscript", Compression.ZLIB),
+    ".bat":  (EntryType.DOCUMENT, "application/x-bat",   Compression.ZLIB),
+    ".ps1":  (EntryType.DOCUMENT, "application/x-powershell", Compression.ZLIB),
+    ".css":  (EntryType.DOCUMENT, "text/css",            Compression.ZLIB),
+    ".scss": (EntryType.DOCUMENT, "text/x-scss",         Compression.ZLIB),
+    ".sql":  (EntryType.DOCUMENT, "application/sql",     Compression.ZLIB),
+    ".r":    (EntryType.DOCUMENT, "text/x-r",            Compression.ZLIB),
+    ".lua":  (EntryType.DOCUMENT, "text/x-lua",          Compression.ZLIB),
+    ".ini":  (EntryType.DOCUMENT, "text/plain",          Compression.ZLIB),
+    ".toml": (EntryType.DOCUMENT, "application/toml",    Compression.ZLIB),
+    ".cfg":  (EntryType.DOCUMENT, "text/plain",          Compression.ZLIB),
+    ".log":  (EntryType.DOCUMENT, "text/plain",          Compression.ZLIB),
 
     # 图片
     ".jpg":  (EntryType.IMAGE, "image/jpeg",    Compression.NONE),

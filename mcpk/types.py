@@ -51,11 +51,24 @@ class FileHeader:
 
 @dataclass
 class EncryptionParams:
-    """加密参数区 (56 字节)。"""
-    kdf_type: int = 0x01           # KdfType.SHA256_XOR
+    """加密参数区 (56 或 76 字节)。"""
+    kdf_type: int = 0x01           # KdfType: 0x01=SHA256_XOR, 0x02=PBKDF2_AES
     encrypt_mode: int = 0x00       # EncryptionMode
-    salt: bytes = b"\x00" * 16     # 128-bit 随机盐
-    control_key_hash: bytes = b"\x00" * 32  # SHA-256(control_key)
+    salt: bytes = b"\x00" * 16     # 128-bit 随机盐 (旧版) 或 256-bit (新版)
+    control_key_hash: bytes = b"\x00" * 32  # SHA-256(control_key) 或 key_verify
+    kdf_iterations: int = 0        # PBKDF2 迭代次数 (仅 kdf_type=0x02)
+
+    @property
+    def is_aes(self) -> bool:
+        from .constants import KdfType
+        return self.kdf_type == KdfType.PBKDF2_AES
+
+    @property
+    def params_size(self) -> int:
+        from .constants import ENCRYPTION_PARAMS_SIZE_LEGACY, ENCRYPTION_PARAMS_SIZE_V2
+        if self.kdf_type == 0x02:
+            return ENCRYPTION_PARAMS_SIZE_V2
+        return ENCRYPTION_PARAMS_SIZE_LEGACY
 
 
 @dataclass
@@ -140,6 +153,26 @@ class MagicEntry:
 
 
 @dataclass
+class IntraRelation:
+    """组内条目间关系。"""
+    source_entry: int = 0   # 条目 ID（在 TOC 中的索引）
+    target_entry: int = 0
+    relation_type: int = 0x00  # IntraRelationType
+    description: str = ""
+
+    def __repr__(self) -> str:
+        from .constants import IntraRelationType
+        try:
+            type_name = IntraRelationType(self.relation_type).name
+        except ValueError:
+            type_name = f"0x{self.relation_type:02x}"
+        return (
+            f"IntraRelation({self.source_entry} -> {self.target_entry}, "
+            f"type={type_name}, desc={self.description!r})"
+        )
+
+
+@dataclass
 class GroupEntry:
     """Group Index 中的分组条目（变长）。"""
     group_id: int = 0
@@ -147,6 +180,8 @@ class GroupEntry:
     group_type: int = 0x00
     name: str = ""
     metadata: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    intra_relations: list[IntraRelation] = field(default_factory=list)
 
     def metadata_dict(self) -> dict:
         if not self.metadata:
@@ -160,9 +195,12 @@ class GroupEntry:
             type_name = GroupType(self.group_type).name
         except ValueError:
             type_name = f"0x{self.group_type:02x}"
+        tags_str = f", tags={self.tags}" if self.tags else ""
+        ir_str = f", intra_rels={len(self.intra_relations)}" if self.intra_relations else ""
         return (
             f"GroupEntry(id={self.group_id}, type={type_name}, "
-            f"name={self.name!r}, entries={self.entry_ids})"
+            f"name={self.name!r}, entries={self.entry_ids}"
+            f"{tags_str}{ir_str})"
         )
 
 
