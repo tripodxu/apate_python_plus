@@ -981,8 +981,8 @@ class DisguiseEngine:
     # =================== MCPK 集成 ===================
 
     def generate_mcpk(self, output_path, log_cb=None, progress_cb=None,
-                      password=None, encrypt_mode="full", group_name=None,
-                      group_map=None):
+                      password=None, encrypt_mode="full", encryption="xor",
+                      group_name=None, group_map=None):
         """
         将目标文件队列打包为 .mcpk 容器文件。
 
@@ -992,6 +992,7 @@ class DisguiseEngine:
             progress_cb: 进度回调 (curr, total, title, detail) (可选)
             password: 加密密码 (可选，None=不加密)
             encrypt_mode: 加密模式 "full"/"metadata_only"/"data_only" (默认 "full")
+            encryption: 加密算法 "xor"(默认，零依赖) / "aes"(需 cryptography)
             group_name: 将所有文件归入同一分组 (可选，与 group_map 二选一)
             group_map: 按文件分组 dict {file_path: group_name} (可选，优先于 group_name)
 
@@ -1020,7 +1021,8 @@ class DisguiseEngine:
         if progress_cb:
             progress_cb(0, total, "MCPK 打包中...", f"0/{total}")
 
-        with MCPKWriter(output_path, password=password, encrypt_mode=encrypt_mode) as writer:
+        with MCPKWriter(output_path, password=password, encrypt_mode=encrypt_mode,
+                        encryption=encryption) as writer:
             for i, file_path in enumerate(valid_files, 1):
                 try:
                     # 确定该文件的分组

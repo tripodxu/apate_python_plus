@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
 )
 
 from core import (
-    DisguiseEngine, DisguiseError, collect_files_from_paths,
+    DisguiseEngine, DisguiseError, disguise_file, collect_files_from_paths,
     PathManager, magic_to_display_text, format_file_size,
 )
 from themes import PALETTES, THEME_NAMES, build_qss, parse_shadow_color
@@ -1440,13 +1440,127 @@ class MainWindow(QWidget):
         self.cb_progress(1, 1, "打包完成", Path(result).name)
         self.cb_log(f"MCPK 文件已生成: {result}")
 
-        reply = QMessageBox.question(
-            self, "打包完成",
-            f"MCPK 文件已生成:\n{result}\n\n是否查看内容？",
+        # ── 承载记忆流程 ──
+        disguise_reply = QMessageBox.question(
+            self, "承载记忆",
+            f"你的记忆碎片已打包：\n{result}\n\n"
+            "是否让它承载在一个平凡的外表之下？\n\n"
+            "记忆会被藏进一段视频、一张图片之中，\n"
+            "唯有那把属于你的钥匙，才能重新唤醒它。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+
+        if disguise_reply == QMessageBox.Yes:
+            self._carry_memory_after_pack(result)
+
+        # ── 查看内容 ──
+        else:
+            view_reply = QMessageBox.question(
+                self, "打包完成",
+                "是否查看记忆碎片的内容？",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+            )
+            if view_reply == QMessageBox.Yes:
+                self._open_mcpk_viewer(result)
+
+    def _carry_memory_after_pack(self, mcpk_path):
+        """打包后承载记忆流程：铸钥匙 → 选外壳 → 承载。"""
+
+        # Step 1: 铸造钥匙
+        magic_input, ok = QInputDialog.getText(
+            self, "铸造你的钥匙",
+            "为这段记忆铸造一把钥匙：\n\n"
+            "它可以是一句暗语、一个日期、一个名字——\n"
+            "任何对你而言有特殊意义的字符。\n"
+            "也可以是十六进制（如 DEADBEEF）。\n\n"
+            "请铭记它，遗忘即永失。",
+            QLineEdit.Normal,
+        )
+        if not ok or not magic_input.strip():
+            return
+
+        # 解析钥匙
+        try:
+            magic_bytes = self.engine.parse_and_set_magic(magic_input.strip())
+        except DisguiseError as e:
+            return QMessageBox.warning(self, "铸造失败", str(e))
+
+        magic_display = magic_to_display_text(magic_bytes)
+        self.cb_log(f"记忆钥匙: {magic_display}")
+
+        # Step 2: 选择承载的外壳
+        mask_path = self._pick_memory_shell()
+        if not mask_path:
+            return
+
+        # Step 3: 确认
+        confirm = QMessageBox.question(
+            self, "确认承载",
+            f"记忆即将沉入平凡的外表之下：\n\n"
+            f"  记忆: {Path(mcpk_path).name}\n"
+            f"  外壳: {Path(mask_path).name}\n"
+            f"  钥匙: {magic_display}\n\n"
+            f"承载之后，它看起来只是一段普通的文件。\n"
+            f"确认？",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
         )
-        if reply == QMessageBox.Yes:
-            self._open_mcpk_viewer(result)
+        if confirm != QMessageBox.Yes:
+            return
+
+        # Step 4: 承载
+        try:
+            self.set_ui_busy(True)
+            disguised_path = disguise_file(
+                str(mcpk_path), str(mask_path), magic_bytes,
+                reserved_output_paths=[str(mcpk_path)],
+            )
+            self.set_ui_busy(False)
+            self.cb_log(f"记忆已承载: {disguised_path}")
+            QMessageBox.information(
+                self, "承载完成",
+                f"记忆已沉睡。\n\n"
+                f"它现在安静地躺在这里：\n{disguised_path}\n\n"
+                f"看起来只是一段平凡的文件，\n"
+                f"但当你再次握住那把钥匙，\n"
+                f"它就会醒来。\n\n"
+                f"钥匙: {magic_display}"
+            )
+        except Exception as e:
+            self.set_ui_busy(False)
+            self.cb_log(f"承载失败: {e}")
+            QMessageBox.warning(self, "承载失败", str(e))
+
+    def _pick_memory_shell(self):
+        """让用户选择承载记忆的外壳。"""
+        valid_masks = [p for p in self.engine.mask_library if Path(p).is_file()]
+
+        if valid_masks:
+            choice_reply = QMessageBox.question(
+                self, "选择外壳",
+                f"你有 {len(valid_masks)} 个可用的外壳。\n\n"
+                "「是」从已有外壳中选择\n「否」从磁盘中寻找一个",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                QMessageBox.Yes,
+            )
+            if choice_reply == QMessageBox.Cancel:
+                return None
+            if choice_reply == QMessageBox.Yes:
+                items = [f"{Path(p).name}  ({format_file_size(Path(p).stat().st_size)})"
+                         for p in valid_masks]
+                item, ok = QInputDialog.getItem(
+                    self, "选择外壳", "外壳文件：", items, 0, False,
+                )
+                if ok and item:
+                    idx = items.index(item)
+                    return valid_masks[idx]
+                return None
+
+        # 浏览选择
+        mask_path, _ = QFileDialog.getOpenFileName(
+            self, "选择外壳文件", "",
+            "视频 (*.mp4 *.mkv *.avi *.mov);;图片 (*.jpg *.png *.bmp);;所有文件 (*)"
+        )
+        return mask_path if mask_path else None
 
     # ── MCPK 浏览 ────────────────────────────────────────
 
