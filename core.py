@@ -813,7 +813,7 @@ class DisguiseEngine:
             if process_events_cb:
                 process_events_cb()
 
-        if self.mapping_output_path and mapping_records:
+        if self.mapping_output_path and self.rename_mapping and mapping_records:
             mapping_path = Path(self.mapping_output_path)
             mapping_path.parent.mkdir(parents=True, exist_ok=True)
             mapping_path.write_text("\n".join(f"{orig} -> {final}" for orig, final in mapping_records) + "\n", encoding="utf-8")
