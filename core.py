@@ -669,6 +669,11 @@ class DisguiseEngine:
         self.mask_library = []
         self._load_mask_library_from_config()
 
+        # rename mapping feature
+        self.rename_mapping = False
+        self.mapping_output_path = None
+        self.disguise_mapping_txt = False
+
     def _load_mask_library_from_config(self):
         library = self.config.get("mask_library", [])
         old_library = self.mask_library[:] if self.mask_library else []
@@ -763,14 +768,17 @@ class DisguiseEngine:
             raise DisguiseError("存在需伪装文件，但面具库为空")
 
         reserved_outputs = {str(Path(p).resolve()) for p in self.target_files if Path(p).exists()}
+        mapping_records = []
+        rename_counter = 0
         success, failed = 0, []
         total = len(self.target_files)
 
         log_cb(f"执行自动切换，魔术字：{magic_to_display_text(magic)}")
-        progress_cb(0, total, "正在批处理...", f"0/{total}")
+        progress_cb(0, total, "正在批处理..", f"0/{total}")
 
         for index, old_path in enumerate(self.target_files[:], start=1):
             try:
+                original_name = Path(old_path).name
                 reserved_outputs.discard(str(Path(old_path).resolve()))
                 if is_disguised_file(old_path, magic):
                     log_cb(f"准备还原：{old_path}")
@@ -782,6 +790,17 @@ class DisguiseEngine:
                     new_path = disguise_file(old_path, mask_file, magic, reserved_outputs)
                     log_cb(f"伪装完成：{new_path}")
 
+                    if self.rename_mapping:
+                        rename_counter += 1
+                        candidate = Path(new_path).with_name(f"{rename_counter}{Path(new_path).suffix}")
+                        while candidate.exists() or str(candidate.resolve()) in reserved_outputs:
+                            rename_counter += 1
+                            candidate = Path(new_path).with_name(f"{rename_counter}{Path(new_path).suffix}")
+                        Path(new_path).rename(candidate)
+                        new_path = str(candidate.resolve())
+
+                    mapping_records.append((original_name, Path(new_path).name))
+
                 self.target_files[index-1] = str(Path(new_path).resolve())
                 reserved_outputs.add(self.target_files[index-1])
                 success += 1
@@ -790,9 +809,26 @@ class DisguiseEngine:
                 failed.append(f"{old_path} -> {e}")
                 log_cb(f"失败：{old_path} -> {e}")
 
-            progress_cb(index, total, "正在批处理...", f"已处理 {index}/{total}")
+            progress_cb(index, total, "正在批处理..", f"已处理{index}/{total}")
             if process_events_cb:
                 process_events_cb()
+
+        if self.mapping_output_path and mapping_records:
+            mapping_path = Path(self.mapping_output_path)
+            mapping_path.parent.mkdir(parents=True, exist_ok=True)
+            mapping_path.write_text("\n".join(f"{orig} -> {final}" for orig, final in mapping_records) + "\n", encoding="utf-8")
+            log_cb(f"已生成映射清单: {mapping_path}")
+
+            if self.disguise_mapping_txt and mapping_records:
+                try:
+                    mapping_magic = self.get_magic_bytes()
+                    for mfile in self.target_files:
+                        reserved_outputs.add(str(Path(mfile).resolve()))
+                    disguised_mapping_path = disguise_file(str(mapping_path), self.get_random_mask_file(), mapping_magic, reserved_outputs)
+                    self.mapping_output_path = str(Path(disguised_mapping_path).resolve())
+                except Exception as e:
+                    failed.append(f"mapping.txt disguise failed: {e}")
+                    log_cb(f"映射清单伪装失败: {e}")
 
         return success, failed
 

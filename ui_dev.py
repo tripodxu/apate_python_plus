@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QWidget, QLabel, QPushButton, QFileDialog, QShortcut,
     QTextEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QLineEdit,
     QListWidget, QListWidgetItem, QFrame, QGridLayout, QProgressBar,
-    QGraphicsDropShadowEffect, QComboBox, QMenu,
+    QGraphicsDropShadowEffect, QComboBox, QMenu, QCheckBox,
 )
 
 from core import (
@@ -246,6 +246,18 @@ class DeveloperWindow(QWidget):
 
         act_layout.addLayout(tools_layout)
         act_layout.addSpacing(12)
+
+        mapping_layout = QHBoxLayout()
+        mapping_layout.setSpacing(10)
+        self.chk_rename_seq = QCheckBox("序号重命名 (1.mp4, 2.mp4 ...)")
+        self.chk_rename_seq.setToolTip("伪装时把输出文件重命名为顺序序号")
+        self.chk_disguise_mapping = QCheckBox("映射清单也伪装")
+        self.chk_disguise_mapping.setToolTip("把原始名->伪装名 的映射文件一起伪装")
+        mapping_layout.addWidget(self.chk_rename_seq)
+        mapping_layout.addWidget(self.chk_disguise_mapping)
+        mapping_layout.addStretch()
+        act_layout.addLayout(mapping_layout)
+        act_layout.addSpacing(8)
 
         self.btn_toggle = self.make_btn("⚡ 启动引擎", "primary")
         self.btn_toggle.setFixedHeight(50)
@@ -486,6 +498,13 @@ class DeveloperWindow(QWidget):
         )
         if reply != QMessageBox.Yes:
             return
+        self.engine.rename_mapping = self.chk_rename_seq.isChecked()
+        self.engine.disguise_mapping_txt = self.chk_disguise_mapping.isChecked()
+        if self.engine.rename_mapping:
+            mapping_dir = self.engine.get_common_target_parent_dir()
+            self.engine.mapping_output_path = str(mapping_dir / "mapping.txt")
+        else:
+            self.engine.mapping_output_path = None
 
         def done(result):
             self.set_ui_busy(False)
