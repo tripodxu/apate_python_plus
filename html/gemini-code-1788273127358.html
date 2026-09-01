@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>APLUSE - 轻量级个人文件隐私管理工具 | 上传前隐私缓冲与可控还原</title>
+  <meta name="description" content="APLUSE 是一款轻量级个人文件隐私管理工具。通过形态伪装与跨端恢复工具，解决云盘目录暴露风险。不是全盘加密的笨重，而是“简单、稳定、可恢复”的安心。">
+  <meta name="keywords" content="APLUSE, 文件隐私管理, 网盘防扫描, 形态伪装, 隐私缓冲, 跨端恢复, 个人文件归档">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#090d16">
+  
+  <!-- Open Graph Meta -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="APLUSE - 上传云盘前，给你的隐私加一层“缓冲带”">
+  <meta property="og:description" content="形态伪装 · 隐私前置 · 可控还原 · 跨端恢复工具化">
+  <meta property="og:url" content="https://apluse.dev/">
+  
+  <style>
+    :root {
+      --bg-base: #090d16;
+      --bg-surface: #0f172a;
+      --bg-surface-elevated: #1e293b;
+      --bg-card: rgba(30, 41, 59, 0.7);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(56, 189, 248, 0.3);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+      --primary-glow: rgba(56, 189, 248, 0.25);
+      --accent-emerald: #34d399;
+      --accent-purple: #a855f7;
+      --accent-amber: #fbbf24;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --shadow-card: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+      --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      line-height: 1.65;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    .container { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+    
+    /* Navigation */
+    .site-header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(9, 13, 22, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .nav-wrap { display: flex; align-items: center; justify-content: space-between; height: 72px; }
+    .brand-logo { display: flex; align-items: center; gap: 10px; font-size: 1.35rem; font-weight: 700; color: #fff; }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--primary), var(--accent-purple));
+      border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .nav-links { display: flex; align-items: center; gap: 32px; list-style: none; }
+    .nav-link { font-size: 0.95rem; color: var(--text-muted); transition: var(--transition-smooth); font-weight: 500; }
+    .nav-link:hover { color: var(--primary); }
+    
+    /* Buttons */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 10px 20px; font-size: 0.95rem; font-weight: 600;
+      border-radius: var(--radius-sm); cursor: pointer; transition: var(--transition-smooth);
+      border: 1px solid transparent;
+    }
+    .btn-primary { background: linear-gradient(135deg, #38bdf8, #0284c7); color: #041322; box-shadow: 0 4px 20px var(--primary-glow); }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 25px rgba(56, 189, 248, 0.4); }
+    .btn-outline { background: rgba(255, 255, 255, 0.04); border-color: var(--border-subtle); color: var(--text-main); }
+    .btn-outline:hover { background: rgba(255, 255, 255, 0.08); transform: translateY(-2px); }
+    .btn-lg { padding: 14px 28px; font-size: 1.05rem; border-radius: var(--radius-md); }
+    
+    /* Hero */
+    .hero-section { position: relative; padding: 90px 0 70px; text-align: center; overflow: hidden; }
+    .hero-glow {
+      position: absolute; top: -120px; left: 50%; transform: translateX(-50%);
+      width: 700px; height: 400px;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.18) 0%, rgba(168, 85, 247, 0.08) 50%, transparent 70%);
+      filter: blur(60px); pointer-events: none; z-index: 0;
+    }
+    .hero-content { position: relative; z-index: 1; max-width: 860px; margin: 0 auto; }
+    .badge-tag {
+      display: inline-flex; align-items: center; gap: 8px; padding: 6px 16px;
+      background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25);
+      border-radius: 999px; font-size: 0.85rem; font-weight: 500; color: var(--primary); margin-bottom: 24px;
+    }
+    .hero-title {
+      font-size: clamp(2.2rem, 5vw, 3.6rem); font-weight: 800; line-height: 1.2;
+      margin-bottom: 20px; background: linear-gradient(180deg, #ffffff 30%, #cbd5e1 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero-title .highlight {
+      background: linear-gradient(135deg, var(--primary) 0%, #38ef7d 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero-subtitle { font-size: clamp(1.05rem, 2vw, 1.25rem); color: var(--text-muted); margin-bottom: 36px; line-height: 1.7; }
+    .hero-actions { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; margin-bottom: 48px; }
+    
+    /* Visual Box */
+    .hero-visual {
+      position: relative; z-index: 1; max-width: 960px; margin: 20px auto 0;
+      background: var(--bg-surface); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg); padding: 32px; box-shadow: var(--shadow-card);
+    }
+    .visual-flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1.1fr; align-items: center; gap: 16px; }
+    .flow-card {
+      background: var(--bg-card); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md); padding: 20px 16px; text-align: left;
+    }
+    .flow-badge { display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; margin-bottom: 10px; }
+    .badge-danger { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+    .badge-primary { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+    .badge-success { background: rgba(52, 211, 153, 0.15); color: #34d399; }
+    .flow-title { font-size: 1rem; font-weight: 600; margin-bottom: 6px; color: #fff; }
+    .flow-desc { font-size: 0.82rem; color: var(--text-muted); }
+    .flow-arrow { color: var(--text-dim); font-size: 1.25rem; display: flex; align-items: center; justify-content: center; }
+    
+    /* Sections */
+    section { padding: 80px 0; position: relative; }
+    .section-header { text-align: center; max-width: 720px; margin: 0 auto 56px; }
+    .section-tag { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--primary); margin-bottom: 12px; display: block; }
+    .section-title { font-size: clamp(1.8rem, 3.5vw, 2.5rem); font-weight: 700; color: #fff; margin-bottom: 16px; }
+    .section-desc { font-size: 1.05rem; color: var(--text-muted); line-height: 1.7; }
+    
+    .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 24px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 28px; }
+    .feature-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 30px 24px; transition: var(--transition-smooth); }
+    .feature-card:hover { border-color: var(--border-accent); transform: translateY(-4px); }
+    .feature-icon-wrap { width: 52px; height: 52px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; margin-bottom: 20px; font-size: 1.5rem; }
+    .icon-cyan { background: rgba(56, 189, 248, 0.12); color: var(--primary); }
+    .icon-green { background: rgba(52, 211, 153, 0.12); color: var(--accent-emerald); }
+    .icon-purple { background: rgba(168, 85, 247, 0.12); color: var(--accent-purple); }
+    .icon-amber { background: rgba(251, 191, 36, 0.12); color: var(--accent-amber); }
+    .feature-title { font-size: 1.2rem; font-weight: 600; color: #fff; margin-bottom: 12px; }
+    .feature-text { font-size: 0.95rem; color: var(--text-muted); line-height: 1.6; }
+    
+    /* Steps */
+    .steps-wrapper { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
+    .step-card { background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 36px 28px; position: relative; }
+    .step-number { font-size: 3.5rem; font-weight: 900; line-height: 1; color: rgba(255, 255, 255, 0.05); position: absolute; top: 20px; right: 24px; font-family: monospace; }
+    .step-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .step-badge { width: 28px; height: 28px; border-radius: 50%; background: var(--primary); color: #041322; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    .step-title { font-size: 1.25rem; font-weight: 700; color: #fff; }
+    .step-desc { font-size: 0.95rem; color: var(--text-muted); margin-bottom: 20px; }
+    .step-tip { background: rgba(0, 0, 0, 0.2); border-left: 3px solid var(--primary); padding: 10px 14px; font-size: 0.85rem; color: #cbd5e1; }
+    
+    /* Comparison Table */
+    .table-container { width: 100%; overflow-x: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface); }
+    .compare-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.95rem; }
+    .compare-table th, .compare-table td { padding: 18px 24px; border-bottom: 1px solid var(--border-subtle); }
+    .compare-table th { background: rgba(255, 255, 255, 0.02); font-weight: 600; color: #fff; }
+    .compare-table th.highlight-col, .compare-table td.highlight-col { background: rgba(56, 189, 248, 0.04); border-left: 1px solid var(--border-accent); border-right: 1px solid var(--border-accent); }
+    .col-title-badge { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); font-weight: 700; }
+    
+    /* Boundary */
+    .boundary-box { margin-top: 40px; padding: 24px; border-radius: var(--radius-md); background: rgba(251, 191, 36, 0.05); border: 1px solid rgba(251, 191, 36, 0.2); display: flex; gap: 16px; }
+    .boundary-icon { font-size: 1.5rem; color: var(--accent-amber); flex-shrink: 0; }
+    .boundary-text h4 { color: #fde047; font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+    .boundary-text p { font-size: 0.9rem; color: #cbd5e1; }
+    
+    /* FAQ */
+    .faq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .faq-item { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 24px; }
+    .faq-q { font-size: 1.05rem; font-weight: 600; color: #fff; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .faq-q::before { content: "Q."; color: var(--primary); font-weight: 700; }
+    .faq-a { font-size: 0.92rem; color: var(--text-muted); }
+    
+    /* CTA */
+    .cta-section { background: linear-gradient(180deg, var(--bg-surface) 0%, #060911 100%); text-align: center; padding: 100px 0; }
+    .cta-card { background: radial-gradient(circle at top, rgba(56, 189, 248, 0.15) 0%, rgba(15, 23, 42, 0.9) 70%); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: var(--radius-lg); padding: 60px 40px; max-width: 900px; margin: 0 auto; }
+    .cta-title { font-size: clamp(2rem, 4vw, 2.8rem); font-weight: 800; color: #fff; margin-bottom: 16px; }
+    .cta-desc { font-size: 1.15rem; color: var(--text-muted); max-width: 640px; margin: 0 auto 36px; }
+    .cta-meta { display: flex; justify-content: center; gap: 28px; margin-top: 32px; font-size: 0.88rem; color: var(--text-dim); flex-wrap: wrap; }
+    
+    /* Footer */
+    .site-footer { border-top: 1px solid var(--border-subtle); background: #060911; padding: 60px 0 30px; font-size: 0.9rem; color: var(--text-dim); }
+    .footer-top { display: flex; justify-content: space-between; gap: 40px; flex-wrap: wrap; margin-bottom: 40px; }
+    .footer-bottom { border-top: 1px solid var(--border-subtle); padding-top: 24px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+    
+    @media (max-width: 900px) {
+      .steps-wrapper, .visual-flow, .faq-grid { grid-template-columns: 1fr; }
+      .flow-arrow { transform: rotate(90deg); margin: 8px 0; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="site-header">
+    <div class="container">
+      <nav class="nav-wrap" aria-label="Main Navigation">
+        <a href="#hero" class="brand-logo">
+          <div class="logo-icon">🛡️</div>
+          APLUSE
+        </a>
+        <ul class="nav-links">
+          <li><a href="#features" class="nav-link">核心亮点</a></li>
+          <li><a href="#workflow" class="nav-link">三步流程</a></li>
+          <li><a href="#scenarios" class="nav-link">应用场景</a></li>
+          <li><a href="#compare" class="nav-link">方案对比</a></li>
+          <li><a href="#faq" class="nav-link">常见问题</a></li>
+        </ul>
+        <div>
+          <a href="#download" class="btn btn-primary">免费体验</a>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero Section -->
+    <section id="hero" class="hero-section">
+      <div class="hero-glow"></div>
+      <div class="container">
+        <div class="hero-content">
+          <div class="badge-tag">🛡️ 个人文件隐私管理新解法 · 纯本地离线处理</div>
+          <h1 class="hero-title">上传云盘前，给你的隐私<br>加一层<span class="highlight">“缓冲带”</span></h1>
+          <p class="hero-subtitle">APLUSE 是一款轻量级个人文件隐私管理工具。通过形态伪装与跨端恢复工具，解决云盘目录暴露风险。不是全盘加密的笨重，而是“简单、稳定、可恢复”的安心。</p>
+          <div class="hero-actions">
+            <a href="#download" class="btn btn-primary btn-lg">免费下载体验</a>
+            <a href="https://github.com/" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-lg">查看 GitHub 源码</a>
+          </div>
+        </div>
+
+        <figure class="hero-visual">
+          <div class="visual-flow">
+            <div class="flow-card">
+              <span class="flow-badge badge-danger">裸奔风险</span>
+              <div class="flow-title">原始敏感文件</div>
+              <div class="flow-desc">敏感文档 / 资产照片 / 归档代码（目录易暴露）</div>
+            </div>
+            <div class="flow-arrow">➔</div>
+            <div class="flow-card">
+              <span class="flow-badge badge-primary">APLUSE 伪装</span>
+              <div class="flow-title">形态伪装外壳</div>
+              <div class="flow-desc">套用自定义面具与密钥，耗时仅依赖面具大小</div>
+            </div>
+            <div class="flow-arrow">➔</div>
+            <div class="flow-card">
+              <span class="flow-badge badge-success">可控还原</span>
+              <div class="flow-title">安全包 + 恢复工具</div>
+              <div class="flow-desc">自带 Win/Android 恢复工具，换设备免安装直解</div>
+            </div>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features">
+      <div class="container">
+        <header class="section-header">
+          <span class="section-tag">Core Advantages</span>
+          <h2 class="section-title">拒绝繁琐，重构个人隐私管理体验</h2>
+          <p class="section-desc">在“文件裸奔”与“重度全盘加密”之间，APLUSE 为普通用户提供了最均衡的隐私防护新路径。</p>
+        </header>
+        <div class="grid-4">
+          <article class="feature-card">
+            <div class="feature-icon-wrap icon-cyan">🛡️</div>
+            <h3 class="feature-title">隐私前置</h3>
+            <p class="feature-text">上传前先做形态伪装，改变物理特征与扩展名，彻底降低云盘敏感目录暴露与全盘自动特征识别风险。</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon-wrap icon-green">🔄</div>
+            <h3 class="feature-title">可控还原</h3>
+            <p class="feature-text">拒绝“加密一时爽，解密火葬场”。同步自动生成 Windows 与 Android 独立恢复工具，换设备免配环境。</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon-wrap icon-purple">⚡</div>
+            <h3 class="feature-title">稳定高效</h3>
+            <p class="feature-text">性能高度可预测。处理耗时主要取决于你所选的面具大小，不随原始文件全量体积线性暴涨，极速不卡顿。</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon-wrap icon-amber">⚙️</div>
+            <h3 class="feature-title">灵活配置</h3>
+            <p class="feature-text">面具自由更换，魔术字与多重密钥支持定制。支持多任务批量处理与日志记录，全面适配各类分发策略。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Workflow -->
+    <section id="workflow">
+      <div class="container">
+        <header class="section-header">
+          <span class="section-tag">Simple Workflow</span>
+          <h2 class="section-title">三步完成隐私缓冲闭环</h2>
+          <p class="section-desc">抛弃复杂的加密命令行与配置项，像日常文件操作一样自然直观。</p>
+        </header>
+        <div class="steps-wrapper">
+          <article class="step-card">
+            <span class="step-number">01</span>
+            <div class="step-header">
+              <div class="step-badge">1</div>
+              <h3 class="step-title">选文件</h3>
+            </div>
+            <p class="step-desc">拖拽或导入需要保护的个人文件、项目工程或归档资料包，支持多文件并发批量处理。</p>
+            <div class="step-tip">💡 提示：支持图片、视频、工程源码、文档等各类个人资产。</div>
+          </article>
+          <article class="step-card">
+            <span class="step-number">02</span>
+            <div class="step-header">
+              <div class="step-badge">2</div>
+              <h3 class="step-title">选面具</h3>
+            </div>
+            <p class="step-desc">选择或自定义伪装面具外壳，配置独有的特征魔术字与访问密钥，设定保护等级。</p>
+            <div class="step-tip">🎭 提示：面具外壳可随意替换，不影响内部真实数据结构。</div>
+          </article>
+          <article class="step-card">
+            <span class="step-number">03</span>
+            <div class="step-header">
+              <div class="step-badge">3</div>
+              <h3 class="step-title">一键执行</h3>
+            </div>
+            <p class="step-desc">秒级生成带独立恢复工具（Windows/Android）的安全文件包，并输出可追溯的本地操作日志。</p>
+            <div class="step-tip">⚡ 提示：目标设备双击恢复工具即可原样还原，无需重新安装。</div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scenarios -->
+    <section id="scenarios">
+      <div class="container">
+        <header class="section-header">
+          <span class="section-tag">Use Cases</span>
+          <h2 class="section-title">为真实的数字生活场景打造</h2>
+          <p class="section-desc">无论是网盘日常同步、跨设备资产交接，还是个人数字归档，APLUSE 都能从容应对。</p>
+        </header>
+        <div class="grid-3">
+          <article class="scenario-card">
+            <span class="scenario-badge">场景 01</span>
+            <h3 class="scenario-title">网盘多端同步与防目录暴露</h3>
+            <p class="feature-text">重要个人笔记、私人照片、合同凭证直接传网盘总让人担忧。APLUSE 预先戴上面具，让网盘扫描无法获取明文目录结构与特征。</p>
+          </article>
+          <article class="scenario-card">
+            <span class="scenario-badge">场景 02</span>
+            <h3 class="scenario-title">跨设备 / 跨平台快速交接</h3>
+            <p class="feature-text">用电脑加密的文件，发到手机或新电脑上常常因缺少特定解密软件而抓狂。APLUSE 生成独立恢复工具，免安装即开即解。</p>
+          </article>
+          <article class="scenario-card">
+            <span class="scenario-badge">场景 03</span>
+            <h3 class="scenario-title">创作者与研究者长线归档</h3>
+            <p class="feature-text">设计原稿、研究数据集、代码资产需要长年保存。APLUSE 批量处理与日志记录功能，让历史归档清晰可查、稳定可控。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Comparison -->
+    <section id="compare">
+      <div class="container">
+        <header class="section-header">
+          <span class="section-tag">Comparison</span>
+          <h2 class="section-title">APLUSE vs 传统 RAR / ZIP 加密</h2>
+          <p class="section-desc">不拼压缩率，更强调“隐私前置 + 可控还原 + 跨端恢复工具化”的路径差异。</p>
+        </header>
+        <div class="table-container">
+          <table class="compare-table">
+            <thead>
+              <tr>
+                <th style="width: 25%;">对比维度</th>
+                <th style="width: 37.5%;">传统 RAR / ZIP 加密</th>
+                <th style="width: 37.5%;" class="highlight-col"><div class="col-title-badge">🛡️ APLUSE 方案</div></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>核心机制</strong></td>
+                <td>全量数据压缩 + 密码学密文包裹</td>
+                <td class="highlight-col"><strong>形态伪装 + 隐私前置缓冲 + 恢复工具捆绑</strong></td>
+              </tr>
+              <tr>
+                <td><strong>处理耗时模型</strong></td>
+                <td>依赖原始文件全量大小，大文件耗时漫长</td>
+                <td class="highlight-col"><strong>主要依赖面具大小，速度恒定不卡顿</strong></td>
+              </tr>
+              <tr>
+                <td><strong>跨端解密门槛</strong></td>
+                <td>目标端必须安装特定解压工具</td>
+                <td class="highlight-col"><strong>自带 Win/Android 免安装恢复工具，开箱即用</strong></td>
+              </tr>
+              <tr>
+                <td><strong>目录隐私保护</strong></td>
+                <td>常暴露文件列表或特征明显的压缩头</td>
+                <td class="highlight-col"><strong>彻底改变外在形态，降低网盘扫描风险</strong></td>
+              </tr>
+              <tr>
+                <td><strong>分发灵活性</strong></td>
+                <td>只能设置统一密码，缺乏外壳替换能力</td>
+                <td class="highlight-col"><strong>面具、魔术字、密钥全支持个性化自定义</strong></td>
+              </tr>
+              <tr>
+                <td><strong>核心适合场景</strong></td>
+                <td>大容量通用压缩、办公文档协作分发</td>
+                <td class="highlight-col"><strong>云盘防扫描、跨设备交接、个人资产长线归档</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="boundary-box">
+          <div class="boundary-icon">⚠️</div>
+          <div class="boundary-text">
+            <h4>产品边界与设计声明</h4>
+            <p>APLUSE 专注于解决个人日常文件在云端存储、设备流转中的“目录暴露与特征扫描”痛点。它<strong>不是全盘强加密系统，也不是反取证对抗工具</strong>。我们坚持 100% 纯本地离线执行，不收集、不上传任何用户数据，为个人用户提供最轻便的隐私缓冲层。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section id="faq">
+      <div class="container">
+        <header class="section-header">
+          <span class="section-tag">FAQ</span>
+          <h2 class="section-title">常见问题解答</h2>
+        </header>
+        <div class="faq-grid">
+          <article class="faq-item">
+            <h3 class="faq-q">什么是“形态伪装”？它的原理是什么？</h3>
+            <p class="faq-a">形态伪装是通过套用合法的“面具文件外壳”（如普通图片、无害二进制结构）和特征魔术字，将原始文件的物理特征包裹起来。网盘系统或常规扫描器只会将其识别为普通面具文件，从而避免目录与敏感特征直接暴露。</p>
+          </article>
+          <article class="faq-item">
+            <h3 class="faq-q">为什么解密不需要在接收端安装 APLUSE？</h3>
+            <p class="faq-a">APLUSE 在生成伪装包时，会自动打包一个极轻量的跨端恢复程序（支持 Windows / Android）。在目标设备上，只需运行该恢复工具输入密钥即可还原，无需繁琐安装或配置运行库。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section id="download" class="cta-section">
+      <div class="container">
+        <div class="cta-card">
+          <h2 class="cta-title">为你的数字资产加一道轻量级安全锁</h2>
+          <p class="cta-desc">告别云端裸奔的焦虑，告别传统加密解密的繁琐。立即体验 APLUSE，开启简单、稳定、可控的文件隐私管理。</p>
+          <div class="hero-actions">
+            <a href="https://github.com/" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-lg">立即免费下载</a>
+            <a href="https://github.com/" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-lg">GitHub 开源仓库</a>
+          </div>
+          <div class="cta-meta">
+            <span>✓ 纯本地离线运行</span>
+            <span>✓ 支持 Windows & Android</span>
+            <span>✓ MIT 开源透明</span>
+            <span>✓ 永久免费使用</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div>
+          <div style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 8px;">🛡️ APLUSE</div>
+          <p style="color: var(--text-muted);">轻量级个人文件隐私管理工具 · 隐私前置 · 可控还原 · 跨端恢复</p>
+        </div>
+        <div>
+          <p style="color: var(--text-dim);">MIT License © 2026 APLUSE Project</p>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>声明：APLUSE 适用于日常个人文件隐私管理场景，非全盘加密与反取证工具。</p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
