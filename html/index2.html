@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>APLUSE：上传前的个人文件隐私缓冲方案</title>
+  <style>
+    :root{
+      --bg:#070d1a;
+      --panel:#0f172a;
+      --stroke:#1e293b;
+      --text:#e5e7eb;
+      --muted:#94a3b8;
+      --brand:#38bdf8;
+      --accent:#22c55e;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,PingFang SC,Microsoft YaHei,sans-serif}
+    a{color:var(--brand);text-decoration:none}
+    .wrap{max-width:1080px;margin:0 auto;padding:32px 22px 72px}
+    .eyebrow{font-size:12px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+    h1{font-size:34px;line-height:1.22;margin:10px 0 14px}
+    h2{font-size:22px;margin:0 0 12px}
+    .lead{color:var(--muted);font-size:15px;line-height:1.8}
+    .hero{display:grid;grid-template-columns:1.2fr 1fr;gap:24px;align-items:center;margin-top:18px}
+    .hero-card{background:linear-gradient(180deg,#0f172a,#111827 60%,#0b1020);border:1px solid var(--stroke);border-radius:22px;padding:28px}
+    .visual{background:#020617;border:1px solid var(--stroke);border-radius:22px;overflow:hidden}
+    .visual img{width:100%;display:block}
+    .cta{display:flex;gap:12px;margin-top:18px;flex-wrap:wrap}
+    .btn{display:inline-flex;align-items:center;padding:12px 16px;border-radius:14px;border:1px solid transparent;font-weight:700;font-size:14px}
+    .primary{background:var(--brand);color:#020617}
+    .ghost{background:transparent;border-color:#334155;color:var(--text)}
+    .note{background:#111827;border:1px dashed #1e293b;border-radius:14px;padding:12px 14px;color:var(--muted);font-size:13px;line-height:1.8}
+    .section{margin-top:34px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    .card{background:var(--panel);border:1px solid var(--stroke);border-radius:18px;padding:18px}
+    .card h3{margin:0 0 8px}
+    .card p,.card li{margin:0;color:var(--muted);font-size:14px;line-height:1.78}
+    .list{margin:0;padding-left:18px}
+    .list li{margin:7px 0}
+    .case{background:#0b1225;border:1px dashed #1e293b;border-radius:16px;padding:16px;font-size:14px;line-height:1.8;color:var(--muted)}
+    .case strong{color:var(--text)}
+    .pill-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
+    .pill{background:#020617;border:1px solid var(--stroke);border-radius:16px;padding:14px;text-align:center}
+    .pill b{display:block;font-size:18px;color:var(--accent)}
+    .pill small{color:var(--muted)}
+    .shot{background:#020617;border:1px solid var(--stroke);border-radius:16px;overflow:hidden}
+    .shot img{width:100%;display:block}
+    .footer{margin-top:26px;color:var(--muted);font-size:12px;line-height:1.7}
+    @media (max-width:920px){.hero,.pill-grid,.grid2,.grid3{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="eyebrow">APLUSE ENGINE</div>
+    <div class="hero">
+      <div class="hero-card">
+        <h1>网盘目录太透明，先把文件换一张脸</h1>
+        <div class="lead">
+          APLUSE 是面向个人用户的文件隐私缓冲工具：在上传云端前，先把文件做形态伪装；在需要时再一键还原。它更像一套“上传前隐私管理流程”，而不是单纯的压缩加密软件。
+        </div>
+        <div class="cta">
+          <a class="btn primary" href="https://github.com/tripodxu/apate_python_plus">去 GitHub 查看项目</a>
+          <a class="btn ghost" href="https://github.com/rippod/apate">查看原始思路 apate</a>
+        </div>
+        <div class="note" style="margin-top:16px">
+          一句话定位：APLUSE 不是全盘加密，也不是反取证工具；它解决的是“上传前的隐私暴露风险 + 需要时的可控还原”。
+        </div>
+      </div>
+      <div class="visual">
+        <img src="assets/image-20260507173405311.png" alt="APLUSE v3.4 界面">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="pill-grid">
+        <div class="pill"><b>由面具决定</b><small>处理时间更取决于面具，而不是原始文件全量</small></div>
+        <div class="pill"><b>稳定可控</b><small>选定面具后，流程更统一，体验更稳定</small></div>
+        <div class="pill"><b>可换面具</b><small>可替换伪装形态，适配不同场景</small></div>
+        <div class="pill"><b>可换密钥</b><small>魔术字/密钥可更换，建议同步更新恢复工具</small></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>先解决真正让人不安的问题</h2>
+      <div class="lead">
+        传统压缩加密主要回答“别人能不能打开”；但个人用户常常更担心的是：文件是否在目录里太显眼、会不会被误点开、设备换了以后自己还能不能解开。APLUSE 把问题前移到“上传前”，把恢复路径提前准备好。
+      </div>
+      <div class="grid3">
+        <div class="card">
+          <h3>1）隐私前置</h3>
+          <p>先做形态伪装，再进入网盘目录，让敏感资料不要那么直白。</p>
+        </div>
+        <div class="card">
+          <h3>2）可控还原</h3>
+          <p>生成 Windows/Android 恢复工具，让自己和接收方都能顺利取回。</p>
+        </div>
+        <div class="card">
+          <h3>3）配置灵活</h3>
+          <p>面具和密钥都可以更换，不锁死在一种配置上。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>3 步理解它怎么工作</h2>
+      <div class="grid3">
+        <div class="card"><h3>选文件</h3><p>把需要保护的文件加入队列。</p></div>
+        <div class="card"><h3>选面具</h3><p>选一个用于伪装形态的面具文件。</p></div>
+        <div class="card"><h3>一键执行</h3><p>完成伪装；需要时再一键还原。</p></div>
+      </div>
+      <div class="note" style="margin-top:12px">
+        术语提示：面具是用于替换形态的模板文件，魔术字是用于标记与还原的一串密钥。首次理解时可以把它想成“外衣 + 工牌”。
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>适合谁、适合哪些场景</h2>
+      <div class="grid2">
+        <div class="case"><strong>云端同步前</strong><br>上传前先完成形态处理，减少目录里的“一眼敏感”。</div>
+        <div class="case"><strong>跨设备交接</strong><br>提前准备恢复工具，接收方不必额外学习复杂解压知识。</div>
+        <div class="case"><strong>个人资料归档</strong><br>需要时再整理成 .mcpk 归档容器，减少零散文件。</div>
+        <div class="case"><strong>日常隐私管理</strong><br>在“隐私强度”与“使用便利”之间取得更实用的平衡。</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>和传统压缩加密的区别</h2>
+      <div class="grid2">
+        <div class="card">
+          <h3>RAR/ZIP 更擅长什么</h3>
+          <ul class="list">
+            <li>压缩效率与通用兼容</li>
+            <li>传统办公协作与文件传输</li>
+            <li>成熟生态与用户习惯</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>APLUSE 更擅长什么</h3>
+          <ul class="list">
+            <li>上传前的隐私缓冲与形态管理</li>
+            <li>更稳定的“面具相关”处理体验</li>
+            <li>恢复工具化与跨端还原</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note" style="margin-top:12px">
+        我们不建议把它当成唯一安全手段。它更适合做“上传前的隐私管理环节”，而不是替代全盘加密或权限管控。
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>产品截图</h2>
+      <div class="grid2">
+        <div class="shot"><img src="assets/image-20260409010208641.png" alt="APLUSE v3.1"></div>
+        <div class="shot"><img src="assets/mobile.jpg" alt="APLUSE mobile restore"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>下一步做什么</h2>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/tripodxu/apate_python_plus">从 GitHub 进入项目</a>
+        <a class="btn ghost" href="https://github.com/tripodxu/apate_python_plus/tree/main/html">查看本推广页源码</a>
+      </div>
+    </div>
+
+    <div class="footer">
+      说明：APLUSE 基于 apate 的开源思路实现，本文用于产品表达与场景包装，侧重于“隐私缓冲、可控还原、可替换配置”的使用建议。
+    </div>
+  </div>
+</body>
+</html>
