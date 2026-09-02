@@ -394,7 +394,7 @@ def reveal_file(file_path: str, magic: bytes, reserved_output_paths=None) -> str
 
 # 恢复脚本模板独立成模块（restore_template.py），避免 180 行字符串占据主引擎文件。
 # 模板以 .replace() 填充占位符，因此这里不能用 format。
-from restore_template import RESTORE_SCRIPT_TEMPLATE
+from .restore_template import RESTORE_SCRIPT_TEMPLATE
 
 
 def _build_restore_script(magic_hex: str, script_filename: str) -> str:
@@ -409,7 +409,7 @@ def _build_restore_script(magic_hex: str, script_filename: str) -> str:
 
 def _build_android_project(magic_hex: str, project_dir: Path, script_name: str):
     """将 Android 项目模板写入指定目录。"""
-    from android_templates import (
+    from .android_templates import (
         GRADLE_SETTINGS, PROJECT_BUILD_GRADLE, APP_BUILD_GRADLE, GRADLE_PROPERTIES,
         GRADLE_WRAPPER_PROPERTIES,
         ANDROID_MANIFEST, ACTIVITY_MAIN_XML, STRINGS_XML, COLORS_XML, STYLES_XML,
@@ -864,7 +864,7 @@ class DisguiseEngine:
         Returns:
             输出文件路径 (str)
         """
-        from mcpk import MCPKWriter
+        from .mcpk import MCPKWriter
 
         if not self.target_files:
             raise DisguiseError("目标队列为空，无法打包")
@@ -925,7 +925,7 @@ class DisguiseEngine:
             dict: 包含 entries, file_size, entry_count, total_original_size,
                   encrypted, groups, relations, packed_at 等
         """
-        from mcpk import MCPKReader, MCPKError as _MCPKError
+        from .mcpk import MCPKReader, MCPKError as _MCPKError
 
         mcpk_path = Path(mcpk_path)
         if not mcpk_path.is_file():
@@ -972,7 +972,7 @@ class DisguiseEngine:
         Returns:
             提取文件的路径 (str)
         """
-        from mcpk import MCPKReader, MCPKError as _MCPKError
+        from .mcpk import MCPKReader, MCPKError as _MCPKError
 
         try:
             with MCPKReader(mcpk_path, password=password) as reader:
@@ -996,7 +996,7 @@ class DisguiseEngine:
         Returns:
             提取文件路径列表 (list[str])
         """
-        from mcpk import MCPKReader, MCPKError as _MCPKError
+        from .mcpk import MCPKReader, MCPKError as _MCPKError
 
         try:
             with MCPKReader(mcpk_path, password=password) as reader:

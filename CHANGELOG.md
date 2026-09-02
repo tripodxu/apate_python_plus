@@ -1,5 +1,21 @@
 # 更新日志
 
+## 3.4.2（文件夹结构优化，未发布）
+
+### 变更
+- 根目录 10 个散落的 `.py` 模块收拢到 `apluse/` 包，形成清晰的包层次结构
+- 包内所有 import 改为相对导入（`from .core import ...`）
+- 删除 `old/` 目录（废弃的 `disguise_ui.py`）和过期的 `beta.md` 推广文档
+- `README.md` 新增「工程优化历史」章节，完整记录 Phase 1-4 的所有优化要点
+- `DEVELOPER.md` 更新项目结构和包内依赖关系说明
+- 更新 `pyproject.toml` 移除已删除目录的 exclude 配置
+
+### 工程
+- 测试适配：所有测试文件的 import 路径和 `unittest.mock.patch` 目标字符串同步更新
+- CI 覆盖率参数更新为 `apluse.core` / `apluse.mcpk` / `apluse.engine_window` / `apluse.restore_template`
+- 创建 `apluse/__init__.py` 提供公共 API 快捷导入
+- 82 测试全绿 + 2 skipped（与重构前一致）
+
 ## 3.4.1（工程优化，未发布）
 
 ### 修复

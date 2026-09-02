@@ -8,12 +8,12 @@ import pytest
 
 
 def test_core_modules_import():
-    for name in ("core", "themes", "android_templates", "mcpk"):
+    for name in ("apluse.core", "apluse.themes", "apluse.android_templates", "apluse.mcpk"):
         importlib.import_module(name)
 
 
 def test_gui_modules_import():
     pytest.importorskip("PyQt5")
     pytest.importorskip("PyQt5.QtMultimedia")
-    for name in ("ui", "ui_dev", "admin_ui"):
+    for name in ("apluse.ui", "apluse.ui_dev", "apluse.admin_ui"):
         importlib.import_module(name)

@@ -16,11 +16,11 @@ from PyQt5.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QInputDialog, QSplitter, QScrollArea, QSlider,
 )
 
-from core import (
+from .core import (
     DisguiseEngine, DisguiseError, disguise_file, collect_files_from_paths,
     PathManager, magic_to_display_text, format_file_size, APP_VERSION,
 )
-from themes import PALETTES, THEME_NAMES, build_qss, parse_shadow_color
+from .themes import PALETTES, THEME_NAMES, build_qss, parse_shadow_color
 
 
 # =================== 通用异步工作线程 ===================
@@ -751,7 +751,7 @@ class MCPKViewerDialog(QWidget):
 
     def _show_image_preview(self, name):
         """静态图片预览。"""
-        from mcpk import MCPKReader
+        from .mcpk import MCPKReader
         with MCPKReader(self.mcpk_path, password=self._password) as reader:
             data = reader.extract(name)
 
@@ -770,7 +770,7 @@ class MCPKViewerDialog(QWidget):
 
     def _show_gif_preview(self, name):
         """GIF 动画预览。"""
-        from mcpk import MCPKReader
+        from .mcpk import MCPKReader
         with MCPKReader(self.mcpk_path, password=self._password) as reader:
             data = reader.extract(name)
 
@@ -798,7 +798,7 @@ class MCPKViewerDialog(QWidget):
     def _show_video_preview(self, name):
         """视频预览（提取到临时文件后播放）。"""
         import tempfile
-        from mcpk import MCPKReader
+        from .mcpk import MCPKReader
 
         with MCPKReader(self.mcpk_path, password=self._password) as reader:
             data = reader.extract(name)
@@ -817,7 +817,7 @@ class MCPKViewerDialog(QWidget):
 
     def _show_text_preview(self, name, max_chars=8000):
         """文本预览。"""
-        from mcpk import MCPKReader
+        from .mcpk import MCPKReader
         with MCPKReader(self.mcpk_path, password=self._password) as reader:
             data = reader.extract(name)
 
@@ -901,7 +901,7 @@ class MCPKViewerDialog(QWidget):
         output_dir = QFileDialog.getExistingDirectory(self, "选择输出目录")
         if not output_dir: return
         try:
-            from mcpk import MCPKReader
+            from .mcpk import MCPKReader
             with MCPKReader(self.mcpk_path, password=self._password) as reader:
                 for name in names:
                     reader.extract_to(name, output_dir)
@@ -1175,7 +1175,7 @@ class MainWindow(QWidget):
         pwd, ok = QInputDialog.getText(self, "身份验证", "输入开发者密码:", QLineEdit.Password)
         if ok and pwd == self.dev_password:
             self.title_bar.set_dev_active(True)
-            from ui_dev import DeveloperWindow
+            from .ui_dev import DeveloperWindow
             self.dev_window = DeveloperWindow(self.engine, self)
             self.dev_window.show()
             self.cb_log("已开启开发者独立窗口")

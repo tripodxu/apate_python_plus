@@ -21,7 +21,7 @@ OUT.mkdir(exist_ok=True)
 
 # 持久化隔离：引擎配置读写全部落到临时目录
 _isolated_dir = Path(tempfile.mkdtemp(prefix="apluse_preview_cfg_"))
-import core
+import apluse.core as core
 core.PathManager.get_persist_dir = staticmethod(lambda: _isolated_dir)
 
 from PyQt5.QtCore import Qt
@@ -46,9 +46,9 @@ for i in range(6):
 
 app = QApplication.instance() or QApplication([])
 
-from ui import MainWindow
-from admin_ui import AdminWindow
-from ui_dev import DeveloperWindow
+from apluse.ui import MainWindow
+from apluse.admin_ui import AdminWindow
+from apluse.ui_dev import DeveloperWindow
 
 main = MainWindow()
 main.setAttribute(Qt.WA_DontShowOnScreen, True)

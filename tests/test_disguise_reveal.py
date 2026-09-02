@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from core import disguise_file, reveal_file, is_disguised_file, DisguiseError
+from apluse.core import disguise_file, reveal_file, is_disguised_file, DisguiseError
 
 
 def _write(path: Path, size: int):

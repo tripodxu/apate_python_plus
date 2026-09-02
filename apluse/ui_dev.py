@@ -9,9 +9,9 @@ from PyQt5.QtWidgets import (
     QFrame, QGridLayout, QProgressBar, QGraphicsDropShadowEffect, QMenu, QCheckBox,
 )
 
-from core import PathManager, magic_to_display_text, format_file_size, APP_VERSION
-from ui import CustomTitleBar, CustomDropList
-from engine_window import EngineWindowBase
+from .core import PathManager, magic_to_display_text, format_file_size, APP_VERSION
+from .ui import CustomTitleBar, CustomDropList
+from .engine_window import EngineWindowBase
 
 
 class DeveloperWindow(EngineWindowBase):
