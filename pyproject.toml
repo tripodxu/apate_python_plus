@@ -1,0 +1,23 @@
+[project]
+name = "apluse-engine"
+# 注意：与 core.APP_VERSION 手工保持一致（纯脚本仓库未启用构建后端，无法动态读取）
+version = "3.4"
+description = "APLUSE ENGINE - 文件伪装/还原工具"
+requires-python = ">=3.8"
+dependencies = [
+    "PyQt5>=5.15",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+line-length = 120
+target-version = "py38"
+extend-exclude = ["apluse_restore_android", "old"]
+
+[tool.ruff.lint]
+# 仅启用错误级检查（语法错误 / 无效返回等），风格类规则暂不引入，
+# 避免对既有代码产生非必要 churn。
+select = ["E9", "F63", "F7", "F82"]

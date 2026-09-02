@@ -69,7 +69,7 @@ org.gradle.jvmargs=-Xmx2048m
 GRADLE_WRAPPER_PROPERTIES = """\
 distributionBase=GRADLE_USER_HOME
 distributionPath=wrapper/dists
-distributionUrl=https\://mirrors.cloud.tencent.com/gradle/gradle-8.5-bin.zip
+distributionUrl=https\\://mirrors.cloud.tencent.com/gradle/gradle-8.5-bin.zip
 zipStoreBase=GRADLE_USER_HOME
 zipStorePath=wrapper/dists
 """
