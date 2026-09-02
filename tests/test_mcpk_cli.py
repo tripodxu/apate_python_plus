@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mcpk.cli import (
+from apluse.mcpk.cli import (
     cmd_pack, cmd_list, cmd_groups, cmd_extract,
     cmd_inspect, cmd_verify, _fmt_size,
 )

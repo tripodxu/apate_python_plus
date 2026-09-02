@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mcpk import MCPKWriter, MCPKReader, MCPKError
+from apluse.mcpk import MCPKWriter, MCPKReader, MCPKError
 
 
 def _write_sample_files(base: Path):

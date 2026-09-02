@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core import DisguiseEngine, DisguiseError, PathManager, _build_restore_script
+from apluse.core import DisguiseEngine, DisguiseError, PathManager, _build_restore_script
 
 
 def _mkengine(tmp_path):
@@ -58,7 +58,7 @@ def test_ensure_pyinstaller_already_installed(tmp_path):
     logs = []
     mock_completed = SimpleNamespace(returncode=0)
     mock_run = MagicMock(return_value=mock_completed)
-    with patch("core.subprocess.run", mock_run):
+    with patch("apluse.core.subprocess.run", mock_run):
         e._ensure_pyinstaller(logs.append, lambda: None, "python")
     assert mock_run.call_count == 1
     assert not logs  # 不应有安装日志
@@ -74,8 +74,8 @@ def test_ensure_pyinstaller_installs_when_missing(tmp_path):
     mock_proc.wait.return_value = 0
     mock_proc.returncode = 0
     mock_popen = MagicMock(return_value=mock_proc)
-    with patch("core.subprocess.run", mock_run), \
-         patch("core.subprocess.Popen", mock_popen):
+    with patch("apluse.core.subprocess.run", mock_run), \
+         patch("apluse.core.subprocess.Popen", mock_popen):
         e._ensure_pyinstaller(logs.append, lambda: None, "python")
     assert any("自动安装" in l for l in logs)
 
@@ -89,8 +89,8 @@ def test_ensure_pyinstaller_install_fails_raises(tmp_path):
     mock_proc.wait.return_value = 1
     mock_proc.returncode = 1
     mock_popen = MagicMock(return_value=mock_proc)
-    with patch("core.subprocess.run", mock_run), \
-         patch("core.subprocess.Popen", mock_popen):
+    with patch("apluse.core.subprocess.run", mock_run), \
+         patch("apluse.core.subprocess.Popen", mock_popen):
         with pytest.raises(DisguiseError, match="安装"):
             e._ensure_pyinstaller(logs.append, lambda: None, "python")
 
@@ -109,9 +109,9 @@ def test_generate_restore_exe_success(tmp_path):
     mock_proc.returncode = 0
     mock_popen = MagicMock(return_value=mock_proc)
 
-    with patch("core.subprocess.run", mock_run), \
-         patch("core.subprocess.Popen", mock_popen), \
-         patch("core.PathManager.get_resource_dir", return_value=tmp_path):
+    with patch("apluse.core.subprocess.run", mock_run), \
+         patch("apluse.core.subprocess.Popen", mock_popen), \
+         patch("apluse.core.PathManager.get_resource_dir", return_value=tmp_path):
         result = e.generate_restore_exe(output_dir, logs.append)
 
     assert result.name == f"{e.get_magic_bytes().hex()}_restore.exe"
@@ -131,9 +131,9 @@ def test_generate_restore_exe_pyinstaller_fails(tmp_path):
     mock_proc.returncode = 1
     mock_popen = MagicMock(return_value=mock_proc)
 
-    with patch("core.subprocess.run", mock_run), \
-         patch("core.subprocess.Popen", mock_popen), \
-         patch("core.PathManager.get_resource_dir", return_value=tmp_path):
+    with patch("apluse.core.subprocess.run", mock_run), \
+         patch("apluse.core.subprocess.Popen", mock_popen), \
+         patch("apluse.core.PathManager.get_resource_dir", return_value=tmp_path):
         with pytest.raises(DisguiseError, match="打包过程失败"):
             e.generate_restore_exe(output_dir, logs.append)
 
@@ -150,9 +150,9 @@ def test_generate_restore_exe_cleanup_removes_temp_script(tmp_path):
     mock_proc.returncode = 0
     mock_popen = MagicMock(return_value=mock_proc)
 
-    with patch("core.subprocess.run", mock_run), \
-         patch("core.subprocess.Popen", mock_popen), \
-         patch("core.PathManager.get_resource_dir", return_value=tmp_path):
+    with patch("apluse.core.subprocess.run", mock_run), \
+         patch("apluse.core.subprocess.Popen", mock_popen), \
+         patch("apluse.core.PathManager.get_resource_dir", return_value=tmp_path):
         e.generate_restore_exe(output_dir, logs.append)
 
     # 临时脚本应已被清理
@@ -168,7 +168,7 @@ def test_generate_restore_apk_no_gradle(tmp_path):
     logs = []
 
     with patch("shutil.which", return_value=None), \
-         patch("core.PathManager.get_resource_dir", return_value=tmp_path):
+         patch("apluse.core.PathManager.get_resource_dir", return_value=tmp_path):
         result = e.generate_restore_apk(output_dir, logs.append)
 
     # 无 Gradle 时应返回项目目录
@@ -198,8 +198,8 @@ def test_generate_restore_apk_gradle_success(tmp_path):
         return mock_proc
 
     with patch("shutil.which", fake_which), \
-         patch("core.subprocess.Popen", side_effect=fake_popen), \
-         patch("core.PathManager.get_resource_dir", return_value=tmp_path):
+         patch("apluse.core.subprocess.Popen", side_effect=fake_popen), \
+         patch("apluse.core.PathManager.get_resource_dir", return_value=tmp_path):
         result = e.generate_restore_apk(output_dir, logs.append)
 
     assert result.name == "apluse_restore.apk"
@@ -221,8 +221,8 @@ def test_generate_restore_apk_gradle_fails(tmp_path):
     mock_popen = MagicMock(return_value=mock_proc)
 
     with patch("shutil.which", fake_which), \
-         patch("core.subprocess.Popen", mock_popen), \
-         patch("core.PathManager.get_resource_dir", return_value=tmp_path):
+         patch("apluse.core.subprocess.Popen", mock_popen), \
+         patch("apluse.core.PathManager.get_resource_dir", return_value=tmp_path):
         result = e.generate_restore_apk(output_dir, logs.append)
 
     # Gradle 失败应返回项目目录

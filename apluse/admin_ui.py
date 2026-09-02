@@ -8,13 +8,13 @@ from PyQt5.QtWidgets import (
     QFrame, QProgressBar, QGraphicsDropShadowEffect, QCheckBox,
 )
 
-from core import (
+from .core import (
     DisguiseEngine, DisguiseError,
     PathManager, magic_to_display_text,
 )
-from themes import PALETTES, build_qss, parse_shadow_color
-from ui import CustomTitleBar, CustomDropList
-from engine_window import EngineWindowBase
+from .themes import PALETTES, build_qss, parse_shadow_color
+from .ui import CustomTitleBar, CustomDropList
+from .engine_window import EngineWindowBase
 
 
 class AdminWindow(EngineWindowBase):

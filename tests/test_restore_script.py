@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from core import _build_restore_script, disguise_file, is_disguised_file
+from apluse.core import _build_restore_script, disguise_file, is_disguised_file
 
 MAGIC_HEX = "7e3c9a55"
 MAGIC = bytes.fromhex(MAGIC_HEX)

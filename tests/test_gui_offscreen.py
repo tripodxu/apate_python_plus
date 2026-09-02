@@ -15,7 +15,7 @@ def _ensure_app():
 
 def test_main_window_builds_and_switches_theme(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from ui import MainWindow
+    from apluse.ui import MainWindow
     app = _ensure_app()
     win = MainWindow()
     win.show()
@@ -27,7 +27,7 @@ def test_main_window_builds_and_switches_theme(monkeypatch):
 
 def test_admin_window_builds(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from admin_ui import AdminWindow
+    from apluse.admin_ui import AdminWindow
     app = _ensure_app()
     win = AdminWindow()
     win.show()
@@ -38,8 +38,8 @@ def test_admin_window_builds(monkeypatch):
 def test_developer_window_builds(monkeypatch, isolated_persist_dir):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from types import SimpleNamespace
-    from core import DisguiseEngine
-    from ui_dev import DeveloperWindow
+    from apluse.core import DisguiseEngine
+    from apluse.ui_dev import DeveloperWindow
     app = _ensure_app()
     engine = DisguiseEngine()
     # DeveloperWindow 会读取 main_window 的 log_file_path 与 styleSheet() 以继承主题
@@ -62,7 +62,7 @@ def test_main_window_item_shows_name_with_tooltip(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from pathlib import Path
     from PyQt5.QtCore import Qt
-    from ui import MainWindow
+    from apluse.ui import MainWindow
     app = _ensure_app()
     win = MainWindow()
     f = _sample_file(tmp_path)
@@ -79,8 +79,8 @@ def test_dev_window_item_shows_name_with_tooltip(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from types import SimpleNamespace
     from PyQt5.QtCore import Qt
-    from core import DisguiseEngine
-    from ui_dev import DeveloperWindow
+    from apluse.core import DisguiseEngine
+    from apluse.ui_dev import DeveloperWindow
     app = _ensure_app()
     engine = DisguiseEngine()
     parent = SimpleNamespace(log_file_path=tmp_path / "apluse.log", styleSheet=lambda: "")
@@ -97,8 +97,8 @@ def test_dev_window_item_shows_name_with_tooltip(monkeypatch, tmp_path):
 def test_dev_magic_label_compact_and_tooltip(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from types import SimpleNamespace
-    from core import DisguiseEngine
-    from ui_dev import DeveloperWindow
+    from apluse.core import DisguiseEngine
+    from apluse.ui_dev import DeveloperWindow
     app = _ensure_app()
     engine = DisguiseEngine()
     parent = SimpleNamespace(log_file_path=tmp_path / "apluse.log", styleSheet=lambda: "")
@@ -123,7 +123,7 @@ def test_admin_delete_removes_exact_path_not_same_name(monkeypatch, tmp_path):
     """两个不同目录下的同名文件，只应删除被选中的那一个（旧实现按文件名匹配会误删两个）。"""
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PyQt5.QtCore import Qt
-    from admin_ui import AdminWindow
+    from apluse.admin_ui import AdminWindow
     app = _ensure_app()
     win = AdminWindow()
     d1 = tmp_path / "dir1"; d1.mkdir()

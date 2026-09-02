@@ -15,7 +15,7 @@ addopts = "-p no:cacheprovider"
 [tool.ruff]
 line-length = 120
 target-version = "py38"
-extend-exclude = ["apluse_restore_android", "old"]
+extend-exclude = ["apluse_restore_android"]
 
 [tool.ruff.lint]
 # 仅启用错误级检查（语法错误 / 无效返回等），风格类规则暂不引入，

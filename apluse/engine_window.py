@@ -12,8 +12,8 @@ from PyQt5.QtWidgets import (
     QWidget, QLabel, QPushButton, QFileDialog, QMessageBox, QListWidgetItem,
 )
 
-from core import collect_files_from_paths, format_file_size
-from ui import EngineWorker
+from .core import collect_files_from_paths, format_file_size
+from .ui import EngineWorker
 
 
 class EngineWindowBase(QWidget):

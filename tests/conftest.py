@@ -1,7 +1,7 @@
 """共享测试夹具：将 PathManager 指向临时目录，避免测试读写仓库根目录的真实 apluse_config.json。"""
 import pytest
 
-from core import PathManager
+from apluse.core import PathManager
 
 
 @pytest.fixture(autouse=True)

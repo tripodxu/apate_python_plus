@@ -106,27 +106,60 @@
   ## 项目结构
 
   ```
-  apluse/
-  ├── main.py              # 程序入口
-  ├── core.py              # 核心引擎：伪装/还原逻辑、配置管理、恢复工具生成
-  ├── ui.py                # PyQt5 界面
-  ├── themes.py            # 主题配色方案
-  ├── android_templates.py # Android 项目模板
-  ├── icon.ico             # 应用图标
-  └── apluse_config.json   # 配置文件（自动生成）
+  .
+  ├── main.py                    # 程序入口
+  ├── admin_main.py              # 管理员模式入口
+  ├── apluse/                    # 核心包
+  │   ├── __init__.py            # 公共 API 导出
+  │   ├── core.py                # 核心引擎：伪装/还原逻辑、配置管理、恢复工具生成
+  │   ├── ui.py                  # PyQt5 主界面
+  │   ├── ui_dev.py              # 开发者窗口
+  │   ├── admin_ui.py            # 管理员窗口
+  │   ├── themes.py              # 7 套主题配色方案
+  │   ├── android_templates.py   # Android 项目模板
+  │   ├── restore_template.py    # 恢复脚本模板
+  │   ├── app_bootstrap.py       # 入口引导（自检、QApplication、图标）
+  │   ├── engine_window.py       # 开发者/管理员窗口公共基类
+  │   └── mcpk/                  # MCPK 文件格式子包
+  ├── tests/                     # 测试套件
+  ├── tools/                     # 开发工具
+  └── icon.ico                   # 应用图标
   ```
 
-  ## 致谢
+  ## 开发环境与测试
 
-  思路来源：[apate](https://github.com/rippod/apate)
+  - 依赖：`pip install -r requirements-dev.txt`（含 PyQt5、pytest、pytest-cov、pyinstaller、Pillow、ruff）
+  - 运行测试：`python -m pytest tests/ -q`（测试通过 conftest 自动隔离配置，不会改写真实 `apluse_config.json`）
+  - 覆盖率：`python -m pytest tests/ -q --cov=apluse.core --cov=apluse.mcpk --cov=apluse.engine_window --cov=apluse.restore_template --cov-report=term`
+  - Lint：`python -m ruff check .`（仅错误级规则，配置见 `pyproject.toml`）
+  - UI 截图对比：`python tools/render_ui_preview.py <tag>`，输出到 `ui_preview/`（离屏渲染，不弹窗、不碰真实配置）
+  - CI：`.github/workflows/tests.yml` 在 Windows 上跑 Python 3.8–3.13 测试矩阵
+  - 打包：`pyinstaller apluse.spec --noconfirm`（等价于 README 中的 PyInstaller 命令）
+  - 模块职责：`engine_window.py` 为开发者/管理员窗口公共基类；`restore_template.py` 为恢复脚本模板；`app_bootstrap.py` 为入口引导；版本号统一改 `core.APP_VERSION`
 
-## 开发环境与测试
+  ## 包内依赖关系
 
-- 依赖：`pip install -r requirements-dev.txt`（含 PyQt5、pytest、pytest-cov、pyinstaller、Pillow、ruff）
-- 运行测试：`python -m pytest tests/ -q`（测试通过 conftest 自动隔离配置，不会改写真实 `apluse_config.json`）
-- 覆盖率：`python -m pytest tests/ -q --cov=core --cov=mcpk --cov=engine_window --cov=restore_template --cov-report=term`
-- Lint：`python -m ruff check .`（仅错误级规则，配置见 `pyproject.toml`）
-- UI 截图对比：`python tools/render_ui_preview.py <tag>`，输出到 `ui_preview/`（离屏渲染，不弹窗、不碰真实配置）
-- CI：`.github/workflows/tests.yml` 在 Windows 上跑 Python 3.8–3.13 测试矩阵
-- 打包：`pyinstaller apluse.spec --noconfirm`（等价于 README 中的 PyInstaller 命令）
-- 模块职责：`engine_window.py` 为开发者/管理员窗口公共基类；`restore_template.py` 为恢复脚本模板；`app_bootstrap.py` 为入口引导；版本号统一改 `core.APP_VERSION`
+  ```
+  叶子模块（无内部依赖）：
+    themes.py, android_templates.py, restore_template.py
+
+  第 1 层（仅依赖叶子）：
+    core.py → restore_template, android_templates（延迟）, mcpk（延迟）
+
+  第 2 层：
+    app_bootstrap → core
+    engine_window → core, ui
+    ui.py → core, themes（顶层）, mcpk（延迟）, ui_dev（延迟）
+
+  第 3 层：
+    admin_ui.py → core, themes, ui, engine_window
+    ui_dev.py  → core, ui, engine_window
+
+  入口点：
+    main.py       → app_bootstrap, ui
+    admin_main.py → app_bootstrap, admin_ui
+
+  循环依赖（通过延迟导入解决）：
+    core.py ↔ mcpk/
+    ui.py  ↔ ui_dev.py
+  ```

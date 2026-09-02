@@ -5,7 +5,7 @@ import ctypes
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QIcon
 
-from core import PathManager
+from .core import PathManager
 
 
 def self_check():

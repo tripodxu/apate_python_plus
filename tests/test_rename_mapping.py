@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from core import DisguiseEngine, is_disguised_file
+from apluse.core import DisguiseEngine, is_disguised_file
 
 
 def _write_binary(path: Path, size: int = 1024):

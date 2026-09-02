@@ -21,4 +21,4 @@ jobs:
           python -m pip install --upgrade pip
           pip install PyQt5 pytest pytest-cov
       - name: Run tests
-        run: python -m pytest tests/ -q --cov=core --cov=mcpk --cov=engine_window --cov=restore_template --cov-report=term
+        run: python -m pytest tests/ -q --cov=apluse.core --cov=apluse.mcpk --cov=apluse.engine_window --cov=apluse.restore_template --cov-report=term

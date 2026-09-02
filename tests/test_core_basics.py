@@ -1,7 +1,7 @@
 import os
 import json
 from pathlib import Path
-from core import (
+from apluse.core import (
     PathManager,
     normalize_config,
     load_config,
