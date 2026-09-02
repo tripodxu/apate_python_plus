@@ -515,10 +515,17 @@ class MCPKViewerDialog(QWidget):
             # 如果是加密文件，提示输入密码
             if "已加密" in err_msg or "密码" in err_msg:
                 from PyQt5.QtWidgets import QInputDialog
-                pwd, ok = QInputDialog.getText(
-                    self, "需要密码", "此 MCPK 文件已加密，请输入密码：",
-                    QLineEdit.Password
-                )
+                dlg = QInputDialog(self)
+                dlg.setWindowTitle("需要密码")
+                dlg.setLabelText("此 MCPK 文件已加密，请输入密码：")
+                dlg.setTextEchoMode(QLineEdit.Password)
+                # 强制主题样式与宽度（与 MainWindow._themed_dialog 同样的修复）
+                if self.parent_window is not None:
+                    dlg.setStyleSheet(self.parent_window.styleSheet())
+                dlg.setMinimumWidth(480)
+                dlg.resize(480, max(dlg.sizeHint().height(), 160))
+                ok = dlg.exec_() == QInputDialog.Accepted
+                pwd = dlg.textValue() if ok else ""
                 if ok and pwd:
                     self._password = pwd
                     try:
@@ -991,6 +998,42 @@ class MCPKViewerDialog(QWidget):
 class MainWindow(QWidget):
     DEV_PASSWORD_DEFAULT = "1080"
 
+    def _themed_dialog(self, dlg):
+        """给弹窗强制应用主题样式并加宽，修复 QSS 对 QInputDialog 无效的问题。"""
+        qss = self.styleSheet()
+        if qss:
+            dlg.setStyleSheet(qss)
+        # QInputDialog 内部布局会忽略 QSS min-width，必须在控件层面强制
+        dlg.setMinimumWidth(480)
+        dlg.resize(480, max(dlg.sizeHint().height(), 160))
+        return dlg
+
+    def _themed_get_text(self, title, label, echo=QLineEdit.Normal, text=""):
+        """主题化文本输入弹窗，返回 (text, ok)。"""
+        dlg = self._themed_dialog(QInputDialog(self))
+        dlg.setWindowTitle(title)
+        dlg.setLabelText(label)
+        dlg.setTextEchoMode(echo)
+        dlg.setTextValue(text)
+        ok = dlg.exec_() == QInputDialog.Accepted
+        return dlg.textValue(), ok
+
+    def _themed_get_item(self, title, label, items, current=0, editable=True):
+        """主题化下拉选择弹窗，返回 (text, ok)。"""
+        dlg = self._themed_dialog(QInputDialog(self))
+        dlg.setWindowTitle(title)
+        dlg.setLabelText(label)
+        dlg.setComboBoxItems(items)
+        dlg.setComboBoxEditable(editable)
+        if items:
+            dlg.setComboBoxCurrentIndex(min(current, len(items) - 1))
+        ok = dlg.exec_() == QInputDialog.Accepted
+        return dlg.textValue(), ok
+
+    def _ask_password(self, title, label):
+        """弹出密码输入框，强制应用主题到弹窗内部控件。"""
+        return self._themed_get_text(title, label, echo=QLineEdit.Password)
+
     def __init__(self):
         super().__init__()
         self.engine = DisguiseEngine()
@@ -1216,7 +1259,7 @@ class MainWindow(QWidget):
             self.dev_window.activateWindow()
             return
 
-        pwd, ok = QInputDialog.getText(self, "开发者身份验证", "请输入开发者密码：", QLineEdit.Password)
+        pwd, ok = self._ask_password("开发者身份验证", "请输入开发者密码：")
         if ok and pwd == self.dev_password:
             self.title_bar.set_dev_active(True)
             from .ui_dev import DeveloperWindow
@@ -1319,7 +1362,7 @@ class MainWindow(QWidget):
 
     def ui_mcpk_create_group(self):
         """弹出输入框创建新分组。"""
-        name, ok = QInputDialog.getText(self, "新建分组", "分组名称：")
+        name, ok = self._themed_get_text("新建分组", "分组名称：")
         if not ok or not name.strip():
             return
         name = name.strip()
@@ -1458,10 +1501,7 @@ class MainWindow(QWidget):
         if reply == QMessageBox.Cancel:
             return
         if reply == QMessageBox.Yes:
-            from PyQt5.QtWidgets import QInputDialog
-            pwd, ok = QInputDialog.getText(
-                self, "设置密码", "请输入加密密码：", QLineEdit.Password
-            )
+            pwd, ok = self._themed_get_text("设置密码", "请输入加密密码：", echo=QLineEdit.Password)
             if not ok or not pwd:
                 return
             password = pwd
@@ -1519,14 +1559,13 @@ class MainWindow(QWidget):
         """打包后承载记忆流程：铸钥匙 → 选外壳 → 承载。"""
 
         # Step 1: 铸造钥匙
-        magic_input, ok = QInputDialog.getText(
-            self, "铸造你的钥匙",
+        magic_input, ok = self._themed_get_text(
+            "铸造你的钥匙",
             "为这段记忆铸造一把钥匙：\n\n"
             "它可以是一句暗语、一个日期、一个名字——\n"
             "任何对你而言有特殊意义的字符。\n"
             "也可以是十六进制（如 DEADBEEF）。\n\n"
             "请铭记它，遗忘即永失。",
-            QLineEdit.Normal,
         )
         if not ok or not magic_input.strip():
             return
@@ -1599,9 +1638,7 @@ class MainWindow(QWidget):
             if choice_reply == QMessageBox.Yes:
                 items = [f"{Path(p).name}  ({format_file_size(Path(p).stat().st_size)})"
                          for p in valid_masks]
-                item, ok = QInputDialog.getItem(
-                    self, "选择外壳", "外壳文件：", items, 0, False,
-                )
+                item, ok = self._themed_get_item("选择外壳", "外壳文件：", items, editable=False)
                 if ok and item:
                     idx = items.index(item)
                     return valid_masks[idx]
