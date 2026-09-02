@@ -197,6 +197,14 @@ def build_qss(p: dict) -> str:
         QLabel#subText {{ color: {p['TEXT_SUB']}; font-size: 12px; }}
         QLabel#badge {{ background: {p['BORDER']}; color: {p['TEXT_MAIN']}; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; }}
 
+        QMenu {{
+            background-color: {p['BG_CARD']}; color: {p['TEXT_MAIN']};
+            border: 1px solid {p['BORDER']}; border-radius: 8px; padding: 4px;
+        }}
+        QMenu::item {{ padding: 6px 28px 6px 12px; border-radius: 4px; }}
+        QMenu::item:selected {{ background: {p['PRI_START']}; color: white; }}
+        QMenu::separator {{ height: 1px; background: {p['BORDER']}; margin: 4px 8px; }}
+
         QListWidget#darkList {{
             background: {p['LIST_BG']}; border: 1px dashed {p['BORDER']}; border-radius: 8px; outline: none; padding: 6px; color: {p['TEXT_MAIN']}; font-size: 13px;
         }}
