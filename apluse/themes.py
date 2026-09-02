@@ -144,11 +144,11 @@ def build_qss(p: dict) -> str:
     return f"""
         QWidget {{ font-family: "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; color: {p['TEXT_MAIN']}; }}
 
-        QMessageBox {{ background-color: {p['BG_CARD']}; }}
+        QMessageBox {{ background-color: {p['BG_CARD']}; min-width: 480px; }}
         QMessageBox QLabel {{ color: {p['TEXT_MAIN']}; background: transparent; font-size: 13px; }}
         QMessageBox QPushButton {{ min-width: 72px; padding: 6px 16px; }}
 
-        QInputDialog {{ background-color: {p['BG_CARD']}; min-width: 360px; }}
+        QInputDialog {{ background-color: {p['BG_CARD']}; min-width: 480px; }}
         QInputDialog QLabel {{ color: {p['TEXT_MAIN']}; background: transparent; }}
         QInputDialog QLineEdit {{
             background: {p['BG_CARD']}; color: {p['TEXT_MAIN']};
