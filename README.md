@@ -205,8 +205,9 @@ def parse_metadata(f, sz):
         nlen = struct.unpack("B", f.read(1))[0]
         npos, hpos = sz - len(MAGIC) - 5 - nlen, sz - len(MAGIC) - 5 - nlen - hlen
         f.seek(npos)
-        try: name = Path(f.read(nlen).decode("utf-8")).name
-        except Exception: name = Path(f.name).stem + f.read(nlen).decode("utf-8")
+        raw_name = f.read(nlen)
+        try: name = Path(raw_name.decode("utf-8")).name
+        except Exception: name = Path(f.name).stem + raw_name.decode("utf-8")
         return {"hlen": hlen, "hpos": hpos, "name": name, "osize": hpos}
     except Exception:
         raise Exception("解析失败：文件已被损坏、被平台二次压缩，或当前使用的魔术字错误！")

@@ -73,7 +73,8 @@ def normalize_config(data) -> dict:
     return {
         "mask_library": mask_library, 
         "magic_hex": magic_hex, 
-        "theme_index": theme_index
+        "theme_index": theme_index,
+        "dev_password": str(data.get("dev_password", "")),
     }
 
 def load_config() -> dict:
@@ -375,7 +376,9 @@ def reveal_file(file_path: str, magic: bytes, reserved_output_paths=None) -> str
 
     desired_path = file_path.parent / meta["original_name"]
     restored_path = desired_path
-    if str(desired_path.resolve()) in {str(Path(p).resolve()) for p in (reserved_output_paths or [])}:
+    reserved_set = {str(Path(p).resolve()) for p in (reserved_output_paths or [])}
+    # 目标已存在且不在本次保留列表 → 自动加后缀，防止覆盖已有文件
+    if str(desired_path.resolve()) in reserved_set or desired_path.exists():
         restored_path = build_non_conflicting_path(desired_path, "restored", reserved_output_paths)
     try:
         shutil.move(str(file_path), str(restored_path))

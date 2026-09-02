@@ -945,7 +945,7 @@ class MCPKViewerDialog(QWidget):
 # =================== 主窗口（MCPK Manager） ===================
 
 class MainWindow(QWidget):
-    DEV_PASSWORD = "1080"
+    DEV_PASSWORD_DEFAULT = "1080"
 
     def __init__(self):
         super().__init__()
@@ -957,6 +957,7 @@ class MainWindow(QWidget):
         self.mcpk_group_map = {}  # {file_path: group_name}
 
         self.log_file_path = PathManager.get_persist_dir() / "apluse.log"
+        self.dev_password = self.engine.config.get("dev_password") or self.DEV_PASSWORD_DEFAULT
 
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -1172,7 +1173,7 @@ class MainWindow(QWidget):
             return
 
         pwd, ok = QInputDialog.getText(self, "身份验证", "输入开发者密码:", QLineEdit.Password)
-        if ok and pwd == self.DEV_PASSWORD:
+        if ok and pwd == self.dev_password:
             self.title_bar.set_dev_active(True)
             from ui_dev import DeveloperWindow
             self.dev_window = DeveloperWindow(self.engine, self)
@@ -1215,6 +1216,10 @@ class MainWindow(QWidget):
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with open(self.log_file_path, "a", encoding="utf-8") as f:
                 f.write(f"[{timestamp}] {text}\n")
+            # 日志轮转：超过 5MB 截断备份
+            if self.log_file_path.stat().st_size > 5 * 1024 * 1024:
+                backup = self.log_file_path.with_suffix(".log.1")
+                self.log_file_path.replace(backup)
         except Exception:
             pass
 
