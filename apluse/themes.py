@@ -148,6 +148,14 @@ def build_qss(p: dict) -> str:
         QMessageBox QLabel {{ color: {p['TEXT_MAIN']}; background: transparent; font-size: 13px; }}
         QMessageBox QPushButton {{ min-width: 72px; padding: 6px 16px; }}
 
+        QInputDialog {{ background-color: {p['BG_CARD']}; }}
+        QInputDialog QLabel {{ color: {p['TEXT_MAIN']}; background: transparent; }}
+        QInputDialog QLineEdit {{
+            background: {p['BG_CARD']}; color: {p['TEXT_MAIN']};
+            border: 1px solid {p['BORDER']}; border-radius: 6px; padding: 6px 10px;
+        }}
+        QInputDialog QLineEdit:focus {{ border: 1px solid {p['PRI_H_START']}; }}
+
         ::selection {{ background-color: {p['PRI_H_START']}; color: white; }}
 
         QFrame#mainContainer {{ background-color: {p['BG_MAIN']}; border: 1px solid {p['BORDER']}; border-radius: 12px; }}
@@ -226,6 +234,12 @@ def build_qss(p: dict) -> str:
             background: {p['BG_CARD']}; color: {p['TEXT_SUB']}; border: none;
             border-bottom: 1px solid {p['BORDER']}; padding: 6px 8px; font-weight: 600;
         }}
+
+        QLineEdit {{
+            background: {p['BG_CARD']}; color: {p['TEXT_MAIN']}; border: 1px solid {p['BORDER']};
+            border-radius: 6px; padding: 6px 10px;
+        }}
+        QLineEdit:focus {{ border: 1px solid {p['PRI_H_START']}; background: {p['LIST_ITEM']}; }}
 
         QLineEdit#neonInput {{
             background: {p['LIST_BG']}; border: 1px solid {p['BORDER']}; border-radius: 6px; padding: 8px 12px; color: {p['PRI_H_START']}; font-family: "Consolas", monospace; font-weight: bold;

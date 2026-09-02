@@ -1216,7 +1216,7 @@ class MainWindow(QWidget):
             self.dev_window.activateWindow()
             return
 
-        pwd, ok = QInputDialog.getText(self, "身份验证", "输入开发者密码:", QLineEdit.Password)
+        pwd, ok = QInputDialog.getText(self, "开发者身份验证", "请输入开发者密码：", QLineEdit.Password)
         if ok and pwd == self.dev_password:
             self.title_bar.set_dev_active(True)
             from .ui_dev import DeveloperWindow
