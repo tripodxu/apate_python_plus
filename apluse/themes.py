@@ -173,10 +173,23 @@ def build_qss(p: dict) -> str:
         QPushButton#macClose {{ background-color: #EF4444; border: 1px solid #DC2626; }}
         QPushButton#macClose:hover {{ background-color: #F87171; }}
 
-        QComboBox#themeCombo {{ background-color: {p['BTN_SEC']}; color: {p['TEXT_MAIN']}; border: 1px solid {p['BORDER']}; border-radius: 6px; padding: 4px 10px; font-weight: bold; }}
-        QComboBox#themeCombo:hover {{ background-color: {p['BTN_SEC_HOVER']}; }}
-        QComboBox#themeCombo::drop-down {{ border: none; }}
-        QComboBox#themeCombo QAbstractItemView {{ background-color: {p['BG_CARD']}; color: {p['TEXT_MAIN']}; border: 1px solid {p['BORDER']}; selection-background-color: {p['PRI_START']}; border-radius: 6px; }}
+        QComboBox {{ background-color: {p['BTN_SEC']}; color: {p['TEXT_MAIN']}; border: 1px solid {p['BORDER']}; border-radius: 6px; padding: 4px 10px; }}
+        QComboBox:hover {{ background-color: {p['BTN_SEC_HOVER']}; }}
+        QComboBox::drop-down {{ border: none; }}
+        QComboBox QAbstractItemView {{
+            background-color: {p['BG_CARD']}; color: {p['TEXT_MAIN']};
+            border: 1px solid {p['BORDER']}; selection-background-color: {p['PRI_START']};
+            selection-color: white; outline: none; border-radius: 6px;
+        }}
+        QComboBox QAbstractItemView::item {{ padding: 4px 8px; min-height: 22px; }}
+
+        QCheckBox {{ color: {p['TEXT_MAIN']}; spacing: 6px; }}
+        QCheckBox::indicator {{
+            width: 16px; height: 16px; border-radius: 4px;
+            border: 1px solid {p['BORDER']}; background: {p['BG_CARD']};
+        }}
+        QCheckBox::indicator:checked {{ background: {p['PRI_START']}; border-color: {p['PRI_START']}; }}
+        QCheckBox::indicator:hover {{ border-color: {p['PRI_H_START']}; }}
 
         QFrame#card {{ background-color: {p['BG_CARD']}; border: 1px solid {p['BORDER']}; border-radius: 10px; }}
         QLabel#cardTitle {{ color: {p['TEXT_MAIN']}; font-size: 15px; font-weight: bold; }}
@@ -190,6 +203,18 @@ def build_qss(p: dict) -> str:
         QListWidget#darkList::item {{ padding: 8px 10px; border-radius: 6px; margin-bottom: 3px; background: {p['LIST_ITEM']}; border: 1px solid transparent; }}
         QListWidget#darkList::item:hover {{ background: {p['LIST_HOVER']}; border-color: {p['BORDER']}; }}
         QListWidget#darkList::item:selected {{ background: {p['LIST_SEL']}; color: white; border-color: {p['PRI_H_START']}; }}
+
+        QTreeWidget#darkList {{
+            background: {p['LIST_BG']}; border: 1px dashed {p['BORDER']}; border-radius: 8px; outline: none;
+            color: {p['TEXT_MAIN']}; font-size: 12px;
+        }}
+        QTreeWidget#darkList::item {{ padding: 4px 6px; background: transparent; }}
+        QTreeWidget#darkList::item:hover {{ background: {p['LIST_HOVER']}; }}
+        QTreeWidget#darkList::item:selected {{ background: {p['LIST_SEL']}; color: white; }}
+        QTreeWidget#darkList QHeaderView::section {{
+            background: {p['BG_CARD']}; color: {p['TEXT_SUB']}; border: none;
+            border-bottom: 1px solid {p['BORDER']}; padding: 6px 8px; font-weight: 600;
+        }}
 
         QLineEdit#neonInput {{
             background: {p['LIST_BG']}; border: 1px solid {p['BORDER']}; border-radius: 6px; padding: 8px 12px; color: {p['PRI_H_START']}; font-family: "Consolas", monospace; font-weight: bold;
