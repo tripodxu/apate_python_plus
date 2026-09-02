@@ -5,32 +5,23 @@ from pathlib import Path
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QKeySequence
 from PyQt5.QtWidgets import (
-    QWidget, QLabel, QPushButton, QFileDialog, QShortcut,
-    QTextEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QLineEdit,
-    QListWidget, QListWidgetItem, QFrame, QGridLayout, QProgressBar,
-    QGraphicsDropShadowEffect, QComboBox, QMenu, QCheckBox,
+    QShortcut, QTextEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QLineEdit,
+    QFrame, QGridLayout, QProgressBar, QGraphicsDropShadowEffect, QMenu, QCheckBox,
 )
 
-from core import (
-    DisguiseEngine, collect_files_from_paths,
-    PathManager, magic_to_display_text, format_file_size,
-)
-from themes import PALETTES, THEME_NAMES, build_qss, parse_shadow_color
-from ui import EngineWorker, CustomTitleBar, CustomDropList
+from core import PathManager, magic_to_display_text, format_file_size, APP_VERSION
+from ui import CustomTitleBar, CustomDropList
+from engine_window import EngineWindowBase
 
 
-class DeveloperWindow(QWidget):
+class DeveloperWindow(EngineWindowBase):
     """独立的伪装引擎窗口，通过密码从主窗口打开。"""
 
-    def __init__(self, engine, main_window):
-        super().__init__()
-        self.engine = engine
-        self.main_window = main_window
-        self.current_worker = None
+    WINDOW_FLAGS = Qt.FramelessWindowHint | Qt.Window
 
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.resize(1280, 860)
+    def __init__(self, engine, main_window):
+        super().__init__(engine)
+        self.main_window = main_window
 
         self.init_ui()
         self._setup_shortcuts()
@@ -61,7 +52,7 @@ class DeveloperWindow(QWidget):
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
 
-        self.title_bar = CustomTitleBar(self, title="\U0001f527 APLUSE ENGINE v3.4 - 开发者模式", show_theme=False)
+        self.title_bar = CustomTitleBar(self, title=f"\U0001f527 APLUSE ENGINE v{APP_VERSION} - 开发者模式", show_theme=False)
         container_layout.addWidget(self.title_bar)
 
         dashboard_layout = QVBoxLayout()
@@ -278,25 +269,6 @@ class DeveloperWindow(QWidget):
 
     # ── 工具方法 ──────────────────────────────────────────
 
-    def make_label(self, text, obj_name):
-        lbl = QLabel(text)
-        lbl.setObjectName(obj_name)
-        return lbl
-
-    def make_btn(self, text, role="default"):
-        btn = QPushButton(text)
-        btn.setProperty("role", role)
-        return btn
-
-    def _make_file_item(self, filepath):
-        try:
-            size_str = format_file_size(Path(filepath).stat().st_size)
-        except Exception:
-            size_str = "?"
-        item = QListWidgetItem(f"{filepath}    [{size_str}]")
-        item.setData(Qt.UserRole, filepath)
-        return item
-
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("Esc"), self).activated.connect(self.close)
         QShortcut(QKeySequence("Ctrl+O"), self).activated.connect(self.ui_select_targets)
@@ -346,7 +318,15 @@ class DeveloperWindow(QWidget):
     def refresh_magic_ui(self):
         m = self.engine.get_magic_bytes()
         self.magic_edit.setText(m.hex().upper())
-        self.magic_info_label.setText(f"生效指令：{magic_to_display_text(m)}")
+        try:
+            text_part = m.decode("utf-8")
+        except UnicodeDecodeError:
+            text_part = ""
+        if text_part and text_part.isprintable():
+            self.magic_info_label.setText(f"生效指令：HEX={m.hex().upper()} ｜ 文本={text_part}")
+        else:
+            self.magic_info_label.setText(f"生效指令：HEX={m.hex().upper()}")
+        self.magic_info_label.setToolTip(magic_to_display_text(m))
 
     def ui_apply_magic(self):
         try:
@@ -380,25 +360,6 @@ class DeveloperWindow(QWidget):
         ts = format_file_size(t_total) if t_total else ""
         self.t_count_label.setText(f"{t_count} 项" + (f"  {ts}" if ts else ""))
 
-    def ui_add_target_paths(self, paths):
-        added = 0
-        for f in collect_files_from_paths(paths):
-            if f not in self.engine.target_files:
-                self.engine.target_files.append(f)
-                added += 1
-        self.refresh_target_list()
-        self.cb_log(f"目标装载: +{added} 项")
-
-    def ui_select_targets(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, "选择目标文件")
-        if paths:
-            self.ui_add_target_paths(paths)
-
-    def ui_select_target_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "选择目标文件夹")
-        if folder:
-            self.ui_add_target_paths([folder])
-
     def ui_rm_targets(self):
         selected = self.target_list.selectedItems()
         if not selected:
@@ -421,26 +382,6 @@ class DeveloperWindow(QWidget):
             self.mask_list.addItem(self._make_file_item(f))
         self.m_count_label.setText(f"{len(self.engine.mask_library)} 项")
 
-    def ui_add_mask_paths(self, paths):
-        added = 0
-        for f in collect_files_from_paths(paths):
-            if f not in self.engine.mask_library:
-                self.engine.mask_library.append(f)
-                added += 1
-        self.engine.save_config()
-        self.refresh_mask_list()
-        self.cb_log(f"面具库扩充: +{added} 项")
-
-    def ui_select_masks(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, "选择面具文件")
-        if paths:
-            self.ui_add_mask_paths(paths)
-
-    def ui_select_mask_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "选择面具文件夹")
-        if folder:
-            self.ui_add_mask_paths([folder])
-
     def ui_rm_masks(self):
         selected = self.mask_list.selectedItems()
         if not selected:
@@ -459,19 +400,10 @@ class DeveloperWindow(QWidget):
 
     # ── 异步任务 ──────────────────────────────────────────
 
-    def _run_task(self, task_fn, done_cb):
-        self.set_ui_busy(True)
-        self.current_worker = EngineWorker(task_fn)
-        self.current_worker.log_sig.connect(self.cb_log)
-        self.current_worker.prog_sig.connect(self.cb_progress)
-        self.current_worker.done_sig.connect(done_cb)
-        self.current_worker.err_sig.connect(self._on_err)
-        self.current_worker.start()
-
-    def _on_err(self, err_msg):
-        self.set_ui_busy(False)
+    def _on_task_error(self, err_msg):
+        # 开发者窗口在内核异常时额外推进度条（管理员窗口无此行为）
         self.cb_progress(0, 1, "系统崩溃", "ERR_FATAL")
-        self.cb_log(f"[ERROR] 内核异常: {err_msg}")
+        super()._on_task_error(err_msg)
 
     def ui_detect(self):
         if not self.engine.target_files:
@@ -487,24 +419,15 @@ class DeveloperWindow(QWidget):
 
         self._run_task(self.engine.detect_status, done)
 
+    def rename_checkbox(self):
+        return self.chk_rename_seq
+
+    def mapping_checkbox(self):
+        return self.chk_disguise_mapping
+
     def ui_toggle(self):
-        if not self.engine.target_files:
-            return self.cb_log("中断: 目标队列为空")
-        count = len(self.engine.target_files)
-        reply = QMessageBox.question(
-            self, "确认执行",
-            f"即将对 {count} 个文件执行自动伪装/还原操作。\n\n确定继续吗？",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-        )
-        if reply != QMessageBox.Yes:
+        if not self.prepare_toggle():
             return
-        self.engine.rename_mapping = self.chk_rename_seq.isChecked()
-        self.engine.disguise_mapping_txt = self.chk_disguise_mapping.isChecked()
-        if self.engine.rename_mapping:
-            mapping_dir = self.engine.get_common_target_parent_dir()
-            self.engine.mapping_output_path = str(mapping_dir / "mapping.txt")
-        else:
-            self.engine.mapping_output_path = None
 
         def done(result):
             self.set_ui_busy(False)

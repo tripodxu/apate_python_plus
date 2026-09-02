@@ -1,7 +1,12 @@
-﻿__pycache__/
+__pycache__/
 *.pyc
 *.pyo
 *.log
 *.bak
 tests/__pycache__/
 README_backup.md
+apluse_config.json
+apluse_restore_android/
+.zcode/
+ui_preview/
+.coverage

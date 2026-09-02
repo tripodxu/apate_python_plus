@@ -1,33 +1,38 @@
-﻿from datetime import datetime
+from datetime import datetime
 from pathlib import Path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QKeySequence
 from PyQt5.QtWidgets import (
-    QWidget, QLabel, QPushButton, QFileDialog, QShortcut,
-    QTextEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QLineEdit,
+    QShortcut, QTextEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QLineEdit,
     QFrame, QProgressBar, QGraphicsDropShadowEffect, QCheckBox,
 )
 
 from core import (
-    DisguiseEngine, DisguiseError, collect_files_from_paths,
-    PathManager, magic_to_display_text, format_file_size,
+    DisguiseEngine, DisguiseError,
+    PathManager, magic_to_display_text,
 )
-from themes import PALETTES, THEME_NAMES, build_qss, parse_shadow_color
-from ui import EngineWorker, CustomTitleBar, CustomDropList
+from themes import PALETTES, build_qss, parse_shadow_color
+from ui import CustomTitleBar, CustomDropList
+from engine_window import EngineWindowBase
 
 
-class AdminWindow(QWidget):
+class AdminWindow(EngineWindowBase):
+    # ── 与开发者窗口的差异文案（基类默认值被此处覆盖）──
+    ITEM_TEXT_TMPL = "{name}  ({size})"
+    TARGET_FILE_FILTER = "所有文件 (*)"
+    TARGET_DIR_DIALOG_TITLE = "选择目标目录"
+    MASK_DIR_DIALOG_TITLE = "选择面具目录"
+    MASK_FILE_FILTER = "视频/图片 (*.mp4 *.jpg *.png *.bmp *.mkv *.avi *.mov);;所有文件 (*)"
+    MSG_TARGET_ADDED = "目标队列新增 {added} 个文件"
+    MSG_MASK_ADDED = "面具库新增 {added} 个文件"
+    MSG_EMPTY_QUEUE = "中断：目标队列为空"
+    MSG_ERROR = "任务异常: {err}"
+    TOGGLE_TEXT = "即将对 {count} 个文件执行自动伪装/还原。\n\n确定继续吗？"
+
     def __init__(self):
-        super().__init__()
-        self.engine = DisguiseEngine()
-        self.current_worker = None
-
+        super().__init__(DisguiseEngine())
         self.log_file_path = PathManager.get_persist_dir() / "apluse.log"
-
-        self.setWindowFlags(Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.resize(1280, 860)
 
         self._init_ui()
         self._setup_shortcuts()
@@ -207,82 +212,43 @@ class AdminWindow(QWidget):
         self.magic_edit.setText(magic.hex())
         self.cb_log(f"已恢复默认钥匙: {magic_to_display_text(magic)}")
 
-    def ui_add_target_paths(self, paths):
-        before = len(self.engine.target_files)
-        self.engine.target_files.extend(collect_files_from_paths(paths))
-        self.engine.target_files = list(dict.fromkeys(self.engine.target_files))
-        added = len(self.engine.target_files) - before
-        self.cb_log(f"目标队列新增 {added} 个文件")
-        self._refresh_targets()
-
-    def ui_add_mask_paths(self, paths):
-        before = set(self.engine.mask_library)
-        for p in collect_files_from_paths(paths):
-            if p not in self.engine.mask_library:
-                self.engine.mask_library.append(p)
-        added = len(set(self.engine.mask_library) - before)
-        self.engine.save_config()
-        self.cb_log(f"面具库新增 {added} 个文件")
-        self._refresh_masks()
-
-    def ui_select_targets(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, "选择目标文件", "", "所有文件 (*)")
-        if paths:
-            self.ui_add_target_paths(paths)
-
-    def ui_select_target_folder(self):
-        d = QFileDialog.getExistingDirectory(self, "选择目标目录")
-        if d:
-            self.ui_add_target_paths([d])
-
     def ui_clear_targets(self):
         self.engine.target_files.clear()
-        self._refresh_targets()
-
-    def ui_select_masks(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, "选择面具文件", "", "视频/图片 (*.mp4 *.jpg *.png *.bmp *.mkv *.avi *.mov);;所有文件 (*)")
-        if paths:
-            self.ui_add_mask_paths(paths)
-
-    def ui_select_mask_folder(self):
-        d = QFileDialog.getExistingDirectory(self, "选择面具目录")
-        if d:
-            self.ui_add_mask_paths([d])
+        self.refresh_target_list()
 
     def ui_clear_masks(self):
         self.engine.mask_library.clear()
         self.engine.save_config()
-        self._refresh_masks()
+        self.refresh_mask_list()
 
-    def _refresh_targets(self):
+    def refresh_target_list(self):
         self.target_list.clear()
         for p in self.engine.target_files:
-            self.target_list.addItem(f"{Path(p).name}  ({format_file_size(Path(p).stat().st_size)})")
+            self.target_list.addItem(self._make_file_item(p))
 
-    def _refresh_masks(self):
+    def refresh_mask_list(self):
         self.mask_list.clear()
         for p in self.engine.mask_library:
-            self.mask_list.addItem(f"{Path(p).name}  ({format_file_size(Path(p).stat().st_size)})")
+            self.mask_list.addItem(self._make_file_item(p))
+
+    def _selected_paths(self, lst):
+        return {lst.item(i).data(Qt.UserRole) for i in range(lst.count()) if lst.item(i).isSelected()} - {None}
 
     def _delete_selected(self):
-        sel = [self.target_list.item(i).text().split("  (")[0] for i in range(self.target_list.count()) if self.target_list.item(i).isSelected()]
+        sel = self._selected_paths(self.target_list)
         if sel:
-            self.engine.target_files = [p for p in self.engine.target_files if Path(p).name not in sel]
-            self._refresh_targets()
+            self.engine.target_files = [p for p in self.engine.target_files if p not in sel]
+            self.refresh_target_list()
             return
-        sel = [self.mask_list.item(i).text().split("  (")[0] for i in range(self.mask_list.count()) if self.mask_list.item(i).isSelected()]
+        sel = self._selected_paths(self.mask_list)
         if sel:
-            keep = []
-            for p in self.engine.mask_library:
-                if Path(p).name not in sel:
-                    keep.append(p)
-            self.engine.mask_library = keep
+            self.engine.mask_library = [p for p in self.engine.mask_library if p not in sel]
             self.engine.save_config()
-            self._refresh_masks()
+            self.refresh_mask_list()
 
     def ui_detect(self):
         if not self.engine.target_files:
-            return self.cb_log("中断：目标队列为空")
+            return self.cb_log(self.MSG_EMPTY_QUEUE)
         try:
             def done(res):
                 self.set_ui_busy(False)
@@ -293,42 +259,24 @@ class AdminWindow(QWidget):
         except Exception as e:
             self.cb_log(f"检测失败: {e}")
 
-    def ui_toggle(self):
-        if not self.engine.target_files:
-            return self.cb_log("中断：目标队列为空")
-        reply = QMessageBox.question(
-            self, "确认执行",
-            f"即将对 {len(self.engine.target_files)} 个文件执行自动伪装/还原。\n\n确定继续吗？",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-        )
-        if reply != QMessageBox.Yes:
-            return
+    def rename_checkbox(self):
+        return self.chk_rename
 
-        self.engine.rename_mapping = self.chk_rename.isChecked()
-        self.engine.disguise_mapping_txt = self.chk_mapping.isChecked()
-        if self.engine.rename_mapping:
-            mapping_dir = self.engine.get_common_target_parent_dir()
-            self.engine.mapping_output_path = str(mapping_dir / "mapping.txt")
-        else:
-            self.engine.mapping_output_path = None
+    def mapping_checkbox(self):
+        return self.chk_mapping
+
+    def ui_toggle(self):
+        if not self.prepare_toggle():
+            return
 
         def done(res):
             self.set_ui_busy(False)
             s, f = res
-            self._refresh_targets()
+            self.refresh_target_list()
             self.cb_progress(1, 1, "引擎挂起", f"成功:{s} | 失败:{len(f)}")
             self.cb_log(f"执行周期结束。成功 {s} 失败 {len(f)}")
 
         self._run_task(self.engine.handle_toggle, done)
-
-    def _run_task(self, task_fn, done_cb):
-        self.set_ui_busy(True)
-        self.current_worker = EngineWorker(task_fn)
-        self.current_worker.log_sig.connect(self.cb_log)
-        self.current_worker.prog_sig.connect(self.cb_progress)
-        self.current_worker.done_sig.connect(done_cb)
-        self.current_worker.err_sig.connect(lambda e: (self.set_ui_busy(False), self.cb_log(f"任务异常: {e}")))
-        self.current_worker.start()
 
     def set_ui_busy(self, busy):
         for w in [
@@ -339,7 +287,7 @@ class AdminWindow(QWidget):
         self.btn_start.setText("🚀 引擎高速处理中..." if busy else "🚀 启动引擎")
 
     def _label(self, text, obj_name="subText"):
-        lb = QLabel(text); lb.setObjectName(obj_name); return lb
+        return self.make_label(text, obj_name)
 
     def _btn(self, text, role="secondary"):
-        b = QPushButton(text); b.setProperty("role", role); return b
+        return self.make_btn(text, role)

@@ -1,4 +1,4 @@
-﻿import os
+import os
 from pathlib import Path
 from core import disguise_file, reveal_file, is_disguised_file, DisguiseError
 

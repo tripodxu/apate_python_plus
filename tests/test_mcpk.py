@@ -1,4 +1,4 @@
-﻿import os
+import os
 import struct
 from pathlib import Path
 from mcpk import MCPKWriter, MCPKReader, MCPKError

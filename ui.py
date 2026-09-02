@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
 
 from core import (
     DisguiseEngine, DisguiseError, disguise_file, collect_files_from_paths,
-    PathManager, magic_to_display_text, format_file_size,
+    PathManager, magic_to_display_text, format_file_size, APP_VERSION,
 )
 from themes import PALETTES, THEME_NAMES, build_qss, parse_shadow_color
 
@@ -52,7 +52,7 @@ class EngineWorker(QThread):
 # =================== 现代化 UI 组件 ===================
 
 class CustomTitleBar(QFrame):
-    def __init__(self, parent=None, title="✨ APLUSE ENGINE v3.4", show_dev_btn=False, show_theme=True):
+    def __init__(self, parent=None, title=f"✨ APLUSE ENGINE v{APP_VERSION}", show_dev_btn=False, show_theme=True):
         super().__init__(parent)
         self.parent = parent
         self.setFixedHeight(48)
@@ -554,7 +554,8 @@ class MCPKViewerDialog(QWidget):
         for entry in self._info.get("entries", []):
             item = QTreeWidgetItem()
             tn = entry.get("type", "?")
-            item.setText(0, f"{icons.get(tn, '\U0001f4ce')} {tn}")
+            fallback_icon = "\U0001f4ce"
+            item.setText(0, f"{icons.get(tn, fallback_icon)} {tn}")
             item.setText(1, entry.get("name", ""))
             item.setText(2, entry.get("mime", ""))
             item.setText(3, format_file_size(entry.get("original_size", 0)))
@@ -1154,8 +1155,9 @@ class MainWindow(QWidget):
             size_str = format_file_size(Path(filepath).stat().st_size)
         except Exception:
             size_str = "?"
-        item = QListWidgetItem(f"{filepath}    [{size_str}]")
+        item = QListWidgetItem(f"{Path(filepath).name}    [{size_str}]")
         item.setData(Qt.UserRole, filepath)
+        item.setToolTip(filepath)
         return item
 
     def _setup_shortcuts(self):

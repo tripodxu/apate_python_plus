@@ -119,3 +119,14 @@
   ## 致谢
 
   思路来源：[apate](https://github.com/rippod/apate)
+
+## 开发环境与测试
+
+- 依赖：`pip install -r requirements-dev.txt`（含 PyQt5、pytest、pytest-cov、pyinstaller、Pillow、ruff）
+- 运行测试：`python -m pytest tests/ -q`（测试通过 conftest 自动隔离配置，不会改写真实 `apluse_config.json`）
+- 覆盖率：`python -m pytest tests/ -q --cov=core --cov=mcpk --cov=engine_window --cov=restore_template --cov-report=term`
+- Lint：`python -m ruff check .`（仅错误级规则，配置见 `pyproject.toml`）
+- UI 截图对比：`python tools/render_ui_preview.py <tag>`，输出到 `ui_preview/`（离屏渲染，不弹窗、不碰真实配置）
+- CI：`.github/workflows/tests.yml` 在 Windows 上跑 Python 3.8–3.13 测试矩阵
+- 打包：`pyinstaller apluse.spec --noconfirm`（等价于 README 中的 PyInstaller 命令）
+- 模块职责：`engine_window.py` 为开发者/管理员窗口公共基类；`restore_template.py` 为恢复脚本模板；`app_bootstrap.py` 为入口引导；版本号统一改 `core.APP_VERSION`
