@@ -12,7 +12,10 @@ def self_check():
     """
     基础的程序自检与环境校验。
     防止程序被逆向人员使用调试器（如 PySnooper, PDB 等）动态调试分析。
+    仅在 Windows 下启用（ctypes.windll 仅 Windows 可用）。
     """
+    if sys.platform != "win32":
+        return
     if sys.gettrace() is not None:
         ctypes.windll.user32.MessageBoxW(
             0,
