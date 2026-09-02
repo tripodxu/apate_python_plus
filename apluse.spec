@@ -1,7 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# APLUSE ENGINE 打包配置：pyinstaller apluse.spec --noconfirm
-# 等价于 README 中的：
-#   pyinstaller --onefile --windowed --icon=icon.ico -n apluse --add-data "icon.ico;." --clean main.py
+
 
 a = Analysis(
     ['main.py'],
@@ -37,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='icon.ico',
+    icon=['icon.ico'],
 )

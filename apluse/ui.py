@@ -464,6 +464,29 @@ class GroupCard(QFrame):
         event.acceptProposedAction()
 
 
+# =================== MCPK 预览加载工作线程 ===================
+
+class _PreviewWorker(QThread):
+    """后台加载 MCPK 条目数据，避免阻塞 UI 线程。"""
+    finished = pyqtSignal(object, str)  # (data: bytes | None, name: str)
+    error = pyqtSignal(str, str)        # (error_msg, name)
+
+    def __init__(self, mcpk_path, name, password=None):
+        super().__init__()
+        self._mcpk_path = mcpk_path
+        self._name = name
+        self._password = password
+
+    def run(self):
+        try:
+            from .mcpk import MCPKReader
+            with MCPKReader(self._mcpk_path, password=self._password) as reader:
+                data = reader.extract(self._name)
+            self.finished.emit(data, self._name)
+        except Exception as e:
+            self.error.emit(str(e), self._name)
+
+
 # =================== MCPK 内容查看对话框 ===================
 
 class MCPKViewerDialog(QWidget):
@@ -688,6 +711,11 @@ class MCPKViewerDialog(QWidget):
             self._preview_gif_movie.stop()
         self._hide_video_controls()
 
+        # 停止之前的后台加载
+        if hasattr(self, '_preview_worker') and self._preview_worker and self._preview_worker.isRunning():
+            self._preview_worker.terminate()
+            self._preview_worker.wait(500)
+
         if not current:
             self._preview_stack.setCurrentIndex(0)
             self._preview_info.setText("")
@@ -727,34 +755,62 @@ class MCPKViewerDialog(QWidget):
             info_lines.append(f"标签: {', '.join(meta['tags'])}")
         self._preview_info.setText("\n".join(info_lines))
 
-        # 根据类型路由预览
+        # 记录当前预览类型，供 worker 回调使用
         TEXT_EXTS = {".md", ".txt", ".json", ".csv", ".srt", ".vtt", ".ass", ".xml", ".yaml", ".yml", ".html", ".htm"}
         IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".ico"}
         GIF_EXTS = {".gif"}
         VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".ts", ".m4v"}
 
+        if ext in GIF_EXTS or (entry_type == "IMAGE" and ext == ".gif"):
+            preview_type = "gif"
+        elif entry_type == "VIDEO" or ext in VIDEO_EXTS:
+            preview_type = "video"
+        elif entry_type == "IMAGE" or ext in IMAGE_EXTS:
+            preview_type = "image"
+        elif entry_type == "DOCUMENT" or ext in TEXT_EXTS:
+            preview_type = "text"
+        else:
+            self._show_placeholder(entry_type, name)
+            return
+
+        # 显示加载提示
+        self._preview_stack.setCurrentIndex(1)
+        self._preview_image.setPixmap(QPixmap())
+        self._preview_image.setText(f"⏳ 加载中: {name}")
+        self._preview_image.setAlignment(Qt.AlignCenter)
+
+        # 启动后台线程加载数据
+        self._preview_pending_type = preview_type
+        self._preview_worker = _PreviewWorker(self.mcpk_path, name, self._password)
+        self._preview_worker.finished.connect(self._on_preview_data_ready)
+        self._preview_worker.error.connect(self._on_preview_error)
+        self._preview_worker.start()
+
+    def _on_preview_data_ready(self, data, name):
+        """后台加载完成，切换到 UI 线程渲染预览。"""
+        preview_type = getattr(self, '_preview_pending_type', None)
         try:
-            if ext in GIF_EXTS or (entry_type == "IMAGE" and ext == ".gif"):
-                self._show_gif_preview(name)
-            elif entry_type == "VIDEO" or ext in VIDEO_EXTS:
-                self._show_video_preview(name)
-            elif entry_type == "IMAGE" or ext in IMAGE_EXTS:
-                self._show_image_preview(name)
-            elif entry_type == "DOCUMENT" or ext in TEXT_EXTS:
-                self._show_text_preview(name)
-            else:
-                self._show_placeholder(entry_type, name)
+            if preview_type == "gif":
+                self._render_gif_preview(data)
+            elif preview_type == "video":
+                self._render_video_preview(data, name)
+            elif preview_type == "image":
+                self._render_image_preview(data)
+            elif preview_type == "text":
+                self._render_text_preview(data)
         except Exception as e:
             self._preview_stack.setCurrentIndex(1)
             self._preview_image.setPixmap(QPixmap())
             self._preview_image.setText(f"预览失败:\n{e}")
 
-    def _show_image_preview(self, name):
-        """静态图片预览。"""
-        from .mcpk import MCPKReader
-        with MCPKReader(self.mcpk_path, password=self._password) as reader:
-            data = reader.extract(name)
+    def _on_preview_error(self, error_msg, name):
+        """后台加载失败。"""
+        self._preview_stack.setCurrentIndex(1)
+        self._preview_image.setPixmap(QPixmap())
+        self._preview_image.setText(f"加载失败:\n{error_msg}")
 
+    def _render_image_preview(self, data):
+        """静态图片预览（在 UI 线程调用，data 已加载完毕）。"""
         img = QImage()
         img.loadFromData(data)
         if img.isNull():
@@ -768,12 +824,8 @@ class MCPKViewerDialog(QWidget):
         self._preview_image.setText("")
         self._preview_stack.setCurrentIndex(1)
 
-    def _show_gif_preview(self, name):
-        """GIF 动画预览。"""
-        from .mcpk import MCPKReader
-        with MCPKReader(self.mcpk_path, password=self._password) as reader:
-            data = reader.extract(name)
-
+    def _render_gif_preview(self, data):
+        """GIF 动画预览（在 UI 线程调用，data 已加载完毕）。"""
         # 停止旧动画
         if self._preview_gif_movie:
             self._preview_gif_movie.stop()
@@ -795,13 +847,9 @@ class MCPKViewerDialog(QWidget):
         movie.start()
         self._preview_stack.setCurrentIndex(2)
 
-    def _show_video_preview(self, name):
-        """视频预览（提取到临时文件后播放）。"""
+    def _render_video_preview(self, data, name):
+        """视频预览（在 UI 线程调用，data 已加载完毕，写入临时文件后播放）。"""
         import tempfile
-        from .mcpk import MCPKReader
-
-        with MCPKReader(self.mcpk_path, password=self._password) as reader:
-            data = reader.extract(name)
 
         # 写入临时文件
         ext = Path(name).suffix.lower()
@@ -815,12 +863,8 @@ class MCPKViewerDialog(QWidget):
         self._show_video_controls()
         self._preview_player.play()
 
-    def _show_text_preview(self, name, max_chars=8000):
-        """文本预览。"""
-        from .mcpk import MCPKReader
-        with MCPKReader(self.mcpk_path, password=self._password) as reader:
-            data = reader.extract(name)
-
+    def _render_text_preview(self, data, max_chars=8000):
+        """文本预览（在 UI 线程调用，data 已加载完毕）。"""
         for encoding in ("utf-8", "gbk", "latin-1"):
             try:
                 text = data.decode(encoding)
