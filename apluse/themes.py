@@ -148,7 +148,7 @@ def build_qss(p: dict) -> str:
         QMessageBox QLabel {{ color: {p['TEXT_MAIN']}; background: transparent; font-size: 13px; }}
         QMessageBox QPushButton {{ min-width: 72px; padding: 6px 16px; }}
 
-        QInputDialog {{ background-color: {p['BG_CARD']}; }}
+        QInputDialog {{ background-color: {p['BG_CARD']}; min-width: 360px; }}
         QInputDialog QLabel {{ color: {p['TEXT_MAIN']}; background: transparent; }}
         QInputDialog QLineEdit {{
             background: {p['BG_CARD']}; color: {p['TEXT_MAIN']};
