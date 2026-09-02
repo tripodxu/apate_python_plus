@@ -183,13 +183,14 @@ def build_qss(p: dict) -> str:
         }}
         QComboBox QAbstractItemView::item {{ padding: 4px 8px; min-height: 22px; }}
 
-        QCheckBox {{ color: {p['TEXT_MAIN']}; spacing: 6px; }}
+        QCheckBox {{ color: {p['TEXT_MAIN']}; spacing: 6px; background: transparent; }}
         QCheckBox::indicator {{
             width: 16px; height: 16px; border-radius: 4px;
             border: 1px solid {p['BORDER']}; background: {p['BG_CARD']};
         }}
         QCheckBox::indicator:checked {{ background: {p['PRI_START']}; border-color: {p['PRI_START']}; }}
         QCheckBox::indicator:hover {{ border-color: {p['PRI_H_START']}; }}
+        QFrame#card QCheckBox {{ color: {p['TEXT_MAIN']}; background: transparent; }}
 
         QFrame#card {{ background-color: {p['BG_CARD']}; border: 1px solid {p['BORDER']}; border-radius: 10px; }}
         QLabel#cardTitle {{ color: {p['TEXT_MAIN']}; font-size: 15px; font-weight: bold; }}
