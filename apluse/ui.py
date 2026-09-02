@@ -615,7 +615,7 @@ class MCPKViewerDialog(QWidget):
         pv_layout.setSpacing(8)
 
         preview_title = QLabel("\U0001f441️ 预览")
-        preview_title.setStyleSheet("font-weight: bold; font-size: 13px; color: #ccc;")
+        preview_title.setObjectName("previewTitle")
         pv_layout.addWidget(preview_title)
 
         # ── 预览切换器 ──
@@ -624,26 +624,26 @@ class MCPKViewerDialog(QWidget):
         # Page 0: 占位（未选择）
         self._preview_placeholder = QLabel("选择文件以预览")
         self._preview_placeholder.setAlignment(Qt.AlignCenter)
-        self._preview_placeholder.setStyleSheet("color: #666; font-size: 13px; background: rgba(255,255,255,0.03); border-radius: 8px;")
+        self._preview_placeholder.setObjectName("previewPlaceholder")
         self._preview_stack.addWidget(self._preview_placeholder)
 
         # Page 1: 静态图片
         self._preview_image = QLabel()
         self._preview_image.setAlignment(Qt.AlignCenter)
-        self._preview_image.setStyleSheet("background: rgba(255,255,255,0.03); border-radius: 8px;")
+        self._preview_image.setObjectName("previewImage")
         self._preview_stack.addWidget(self._preview_image)
 
         # Page 2: GIF 动画
         self._preview_gif = QLabel()
         self._preview_gif.setAlignment(Qt.AlignCenter)
-        self._preview_gif.setStyleSheet("background: rgba(255,255,255,0.03); border-radius: 8px;")
+        self._preview_gif.setObjectName("previewGif")
         self._preview_gif_movie = None
         self._preview_gif_buffer = None
         self._preview_stack.addWidget(self._preview_gif)
 
         # Page 3: 视频播放
         self._preview_video_widget = QVideoWidget()
-        self._preview_video_widget.setStyleSheet("background: #111; border-radius: 8px;")
+        self._preview_video_widget.setObjectName("previewVideo")
         self._preview_player = QMediaPlayer()
         self._preview_player.setVideoOutput(self._preview_video_widget)
         self._preview_stack.addWidget(self._preview_video_widget)
@@ -652,24 +652,24 @@ class MCPKViewerDialog(QWidget):
         video_ctrl = QHBoxLayout()
         self._btn_play = QPushButton("▶")
         self._btn_play.setFixedSize(32, 32)
-        self._btn_play.setStyleSheet("QPushButton { background: rgba(255,255,255,0.1); border-radius: 16px; font-size: 14px; } QPushButton:hover { background: rgba(255,255,255,0.2); }")
+        self._btn_play.setObjectName("videoPlayBtn")
         self._btn_play.clicked.connect(self._toggle_video_play)
         self._btn_play.hide()
         video_ctrl.addWidget(self._btn_play)
 
         self._video_position = QLabel("00:00")
-        self._video_position.setStyleSheet("color: #999; font-size: 11px;")
+        self._video_position.setObjectName("videoTime")
         self._video_position.hide()
         video_ctrl.addWidget(self._video_position)
 
         self._video_slider = QSlider(Qt.Horizontal)
-        self._video_slider.setStyleSheet("QSlider::groove:horizontal { height: 4px; background: rgba(255,255,255,0.15); border-radius: 2px; } QSlider::handle:horizontal { width: 12px; margin: -4px 0; background: #4a9eff; border-radius: 6px; }")
+        self._video_slider.setObjectName("videoSlider")
         self._video_slider.hide()
         self._video_slider.sliderMoved.connect(self._on_video_slider_moved)
         video_ctrl.addWidget(self._video_slider, 1)
 
         self._video_duration = QLabel("00:00")
-        self._video_duration.setStyleSheet("color: #999; font-size: 11px;")
+        self._video_duration.setObjectName("videoTime")
         self._video_duration.hide()
         video_ctrl.addWidget(self._video_duration)
 
@@ -893,7 +893,7 @@ class MCPKViewerDialog(QWidget):
         icon = type_icons.get(entry_type, "\U0001f4ce")
         self._preview_image.setPixmap(QPixmap())
         self._preview_image.setText(f"{icon}\n{entry_type}\n{name}")
-        self._preview_image.setStyleSheet("background: rgba(255,255,255,0.03); border-radius: 8px; color: #999;")
+        # 颜色由主题 QSS 的 QLabel#previewImage 控制
         self._preview_stack.setCurrentIndex(1)
 
     # ── 视频控制 ──
@@ -1093,7 +1093,7 @@ class MainWindow(QWidget):
 
         # 当前分组指示器
         self.mcpk_group_indicator = QLabel("未选择分组")
-        self.mcpk_group_indicator.setStyleSheet("color: #888; font-size: 11px; padding: 4px 8px;")
+        self.mcpk_group_indicator.setObjectName("mcpkMeta")
         group_bar.addWidget(self.mcpk_group_indicator)
 
         group_bar.addStretch()
@@ -1340,11 +1340,12 @@ class MainWindow(QWidget):
             self.mcpk_selected_group = text
             border, bg, txt_color = self.mcpk_group_colors.get(text, ("#888", "#88812", "#aaa"))
             self.mcpk_group_indicator.setText(f"● {text}")
+            # 分组选中时用强调色，由主题 QSS 的 QLabel#mcpkMeta 控制基础样式
             self.mcpk_group_indicator.setStyleSheet(f"color: {txt_color}; font-size: 11px; padding: 4px 8px; font-weight: bold;")
         else:
             self.mcpk_selected_group = None
             self.mcpk_group_indicator.setText("未选择分组")
-            self.mcpk_group_indicator.setStyleSheet("color: #888; font-size: 11px; padding: 4px 8px;")
+            self.mcpk_group_indicator.setStyleSheet("")  # 恢复主题默认
 
     def ui_mcpk_assign_to_group(self):
         """将选中文件归入当前分组。"""
