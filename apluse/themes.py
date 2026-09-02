@@ -207,8 +207,10 @@ def build_qss(p: dict) -> str:
         QTreeWidget#darkList {{
             background: {p['LIST_BG']}; border: 1px dashed {p['BORDER']}; border-radius: 8px; outline: none;
             color: {p['TEXT_MAIN']}; font-size: 12px;
+            alternate-background-color: {p['LIST_ITEM']};
         }}
         QTreeWidget#darkList::item {{ padding: 4px 6px; background: transparent; }}
+        QTreeWidget#darkList::item:alternate {{ background: {p['LIST_ITEM']}; }}
         QTreeWidget#darkList::item:hover {{ background: {p['LIST_HOVER']}; }}
         QTreeWidget#darkList::item:selected {{ background: {p['LIST_SEL']}; color: white; }}
         QTreeWidget#darkList QHeaderView::section {{
