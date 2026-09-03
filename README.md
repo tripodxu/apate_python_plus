@@ -1,6 +1,6 @@
 # APLUSE ENGINE v3.4
 
-推广页请见[index](./html/index.html)
+推广页请见[APLUSE - 轻量级个人文件隐私管理工具 | 上传前隐私缓冲与可控还原](https://logicc.top/toys/aplate/)
 
 基于 [apate](https://github.com/rippod/apate) 思路，用 Python 重新实现的文件伪装/还原工具。通过替换文件头部字节并追加加密元数据，将任意文件伪装为另一种格式（如将 `.rar` 伪装为 `.mp4`），同时支持一键还原，现在支持windows系统和安卓系统的还原。
 
